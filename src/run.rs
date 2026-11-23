@@ -48,6 +48,13 @@ mod in_terminal {
     /// Terminal before it is shown anyway.
     const HELD_FRAME_LIMIT: Duration = Duration::from_millis(150);
 
+    /// How long the start of a code the Terminal sent is kept from the
+    /// Target app while the rest of it has not come. The rest of a code
+    /// that Windows cut in two is already waiting to be read; only an
+    /// Escape key from a Terminal that sends keys in no other form waits
+    /// this long.
+    const HELD_INPUT_LIMIT: Duration = Duration::from_millis(100);
+
     enum Event {
         AppWrote(Vec<u8>),
         AppOutputEnded,
@@ -131,7 +138,17 @@ mod in_terminal {
         // The run is over once the app has ended and everything it drew has
         // reached the Terminal. The two are reported in either order.
         while !(output_ended && exit_status.is_some()) {
-            let event = if session.holding_frame() {
+            let event = if session.holding_input() {
+                match happened.recv_timeout(HELD_INPUT_LIMIT) {
+                    Ok(event) => event,
+                    Err(RecvTimeoutError::Timeout) => {
+                        tape.add(|| Recorded::HeldInputReleased);
+                        react(session.release_held_input())?;
+                        continue;
+                    }
+                    Err(RecvTimeoutError::Disconnected) => break,
+                }
+            } else if session.holding_frame() {
                 match happened.recv_timeout(HELD_FRAME_LIMIT) {
                     Ok(event) => event,
                     Err(RecvTimeoutError::Timeout) => {

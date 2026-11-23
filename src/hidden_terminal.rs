@@ -48,4 +48,13 @@ impl HiddenTerminal {
     pub(crate) fn asks_what_it_is_on(self) -> bool {
         self == HiddenTerminal::Shipped
     }
+
+    /// True when a character written to the hidden terminal's input as
+    /// plain text may reach the app as something else. For a character the
+    /// keyboard layout has no key for, such as a Half-space, `؟` or a
+    /// Persian digit, the built-in one makes up a key sequence: Alt held
+    /// down while the character's number is typed. Codex drops those.
+    pub(crate) fn makes_up_keys_for_plain_characters(self) -> bool {
+        self == HiddenTerminal::BuiltIn
+    }
 }

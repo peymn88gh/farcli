@@ -16,6 +16,7 @@ pub mod screen;
 pub mod session;
 pub mod setup;
 pub mod terminal;
+mod terminal_input;
 
 /// The size of a Terminal, or of the hidden terminal, in character cells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

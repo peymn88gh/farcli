@@ -33,6 +33,8 @@ fn a_recording_file_gives_back_the_app_its_version_the_system_and_everything_tha
         (41, Event::UserTyped(vec![0x00, 0xff, 0x7f, b' '])),
         (300, Event::TerminalResized(Size { cols: 30, rows: 8 })),
         (450, Event::HeldFrameReleased),
+        (460, Event::UserTyped(b"\x1b".to_vec())),
+        (560, Event::HeldInputReleased),
     ];
 
     let mut file = Vec::new();
@@ -77,6 +79,27 @@ fn a_replayed_recording_shows_what_the_terminal_showed_and_gives_the_app_what_it
     assert!(replay.terminal.cell(Position { row: 2, col: 5 }).style.bold);
     // The answer to the app's question, then the key.
     assert_eq!(replay.app_received, b"\x1b[2;1R\x1b[65;30;97;1;0;1_");
+}
+
+#[test]
+fn a_replay_forwards_what_farcli_held_back_where_the_recording_says_the_wait_ended() {
+    // The Escape key as a Terminal sends it that has no other form for
+    // keys: the character every code starts with, and then nothing.
+    let recording = Recording::read(
+        "farcli recording 1\napp: demo\napp-version: 1.0\nsystem: Windows native\n\
+         size: 20x4\ncursor: 0,0\n\n10 keys \\e\n110 release-keys\n300 keys \\e\n",
+    )
+    .unwrap();
+    let mut replay = Replay::start(&recording, AppProfile::plain());
+
+    replay.step();
+    assert_eq!(replay.app_received, b"");
+    assert_eq!(replay.step(), Some(Event::HeldInputReleased));
+    assert_eq!(replay.app_received, b"\x1b");
+
+    // Nothing is left held back when the recording is over.
+    replay.finish();
+    assert_eq!(replay.app_received, b"\x1b\x1b");
 }
 
 #[test]
