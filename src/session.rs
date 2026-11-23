@@ -6,7 +6,7 @@
 //! Terminal and the bytes to forward to the app.
 
 use crate::app_profile::AppProfile;
-use crate::correction;
+use crate::correction::Correction;
 use crate::hidden_screen::{Aside, HiddenScreen};
 use crate::hidden_terminal::HiddenTerminal;
 use crate::painter::{Frame, Painter};
@@ -14,7 +14,7 @@ use crate::screen::Position;
 use crate::Size;
 
 pub struct Session {
-    profile: AppProfile,
+    correction: Correction,
     hidden_screen: HiddenScreen,
     painter: Painter,
     /// True until the hidden terminal's own question about what kind of
@@ -43,7 +43,7 @@ impl Session {
     /// same size.
     pub fn start(profile: AppProfile, size: Size, cursor: Position) -> Session {
         Session {
-            profile,
+            correction: Correction::new(profile),
             hidden_screen: HiddenScreen::new(size, cursor),
             painter: Painter::new(size),
             hidden_terminal_is_asking: false,
@@ -130,7 +130,7 @@ impl Session {
             cursor: self.hidden_screen.cursor(),
             cursor_visible: self.hidden_screen.cursor_visible(),
         };
-        correction::correct(&mut frame, &self.profile);
+        self.correction.correct(&mut frame);
         self.painter.paint(&frame)
     }
 }

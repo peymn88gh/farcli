@@ -59,12 +59,13 @@ impl FakeTerminal {
         self.screen()[usize::from(at.row)][usize::from(at.col)].clone()
     }
 
+    /// The rows a person finds by scrolling back, oldest first.
+    pub fn scrollback(&self) -> Vec<Row> {
+        self.emulator.scrollback()
+    }
+
     /// The text of each row a person finds by scrolling back, oldest first.
     pub fn scrollback_text(&self) -> Vec<String> {
-        self.emulator
-            .scrollback()
-            .iter()
-            .map(|row| row_text(row))
-            .collect()
+        self.scrollback().iter().map(|row| row_text(row)).collect()
     }
 }

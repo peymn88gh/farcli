@@ -16,6 +16,20 @@ enum App {
     Plain,
 }
 
+/// What farcli knows about how a Target app lays out its screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Screen {
+    /// Each row that holds Farsi is taken as a paragraph of its own, as
+    /// wide as the Terminal. That is all farcli can do for a program it
+    /// knows nothing about.
+    EveryRowAParagraph,
+    /// Claude Code's screen: see `regions::claude_code`.
+    ClaudeCode,
+    /// A screen with an interface around its text that farcli cannot tell
+    /// apart yet. It is shown as drawn.
+    NotKnown,
+}
+
 impl AppProfile {
     pub fn claude_code() -> AppProfile {
         AppProfile {
@@ -41,13 +55,22 @@ impl AppProfile {
         }
     }
 
-    /// True when each row that holds Farsi is taken as a paragraph of its
-    /// own, as wide as the Terminal. That is all farcli can do for a program
-    /// it knows nothing about. A Target app's screen has an interface around
-    /// its text, so its rows are left as drawn until farcli can tell the
-    /// two apart.
-    pub(crate) fn every_row_is_a_paragraph(&self) -> bool {
-        self.app == App::Plain
+    /// How the app's screen is split into regions.
+    pub(crate) fn screen(&self) -> Screen {
+        match self.app {
+            App::ClaudeCode => Screen::ClaudeCode,
+            // Shown exactly as drawn until farcli can tell Codex's text
+            // from its interface.
+            App::Codex => Screen::NotKnown,
+            App::Plain => Screen::EveryRowAParagraph,
+        }
+    }
+
+    /// True when the app puts Farsi into Screen order itself, row by row,
+    /// so that its rows have to be turned back into Logical order before
+    /// they are laid out. Claude Code does on Windows.
+    pub(crate) fn reorders_farsi_itself(&self) -> bool {
+        self.app == App::ClaudeCode
     }
 
     /// The profile for the app the user named after `farcli`, together with

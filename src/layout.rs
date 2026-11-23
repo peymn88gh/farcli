@@ -66,6 +66,37 @@ pub fn holds_right_to_left(cells: &[Cell]) -> bool {
     })
 }
 
+/// How a character bears on the order of the text around it, for code
+/// outside Layout that has to reason about order: the Undo step, which works
+/// back from what a Target app drew.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Bearing {
+    /// A letter of a left-to-right script.
+    Left,
+    /// A letter of a right-to-left script.
+    Right,
+    Digit,
+    /// A space, punctuation or anything else that takes its direction from
+    /// its neighbours.
+    Weak,
+}
+
+pub(crate) fn bearing(character: char) -> Bearing {
+    match class_of(character) {
+        CharClass::Left => Bearing::Left,
+        CharClass::Right | CharClass::Arabic => Bearing::Right,
+        CharClass::Digit | CharClass::ArabicDigit => Bearing::Digit,
+        _ => Bearing::Weak,
+    }
+}
+
+/// The Logical positions of a line's characters in the order they sit on
+/// screen from the left, by the same reordering rules Layout follows, for a
+/// line whose direction is `direction`.
+pub(crate) fn screen_order(characters: &[char], direction: Direction) -> Vec<usize> {
+    reorder::screen_order(&reorder::levels(characters, direction))
+}
+
 /// Lays out one line of a paragraph whose Paragraph direction is `direction`.
 ///
 /// `logical` is the line's text in Logical order, one cell per character

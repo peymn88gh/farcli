@@ -11,11 +11,13 @@ pub mod hidden_terminal;
 pub mod layout;
 pub mod painter;
 pub mod recording;
+mod regions;
 pub mod run;
 pub mod screen;
 pub mod session;
 pub mod setup;
 pub mod terminal;
+mod undo;
 
 /// The size of a Terminal, or of the hidden terminal, in character cells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
