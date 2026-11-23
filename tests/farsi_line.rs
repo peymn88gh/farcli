@@ -324,6 +324,10 @@ fn a_farsi_line_reads_correctly_while_it_arrives_letter_by_letter() {
         run.terminal.screen_text()[0],
         at_right_edge(20, &from_the_right("ﺳﻠﺎﻡ"))
     );
+
+    // The line ends, and the next one starts at the left as always.
+    run.app_writes("\r\n");
+    assert_eq!(run.terminal.cursor(), at(1, 0));
 }
 
 #[test]
