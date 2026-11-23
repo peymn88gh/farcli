@@ -34,6 +34,7 @@ use std::path::Path;
 
 use crate::app_profile::AppProfile;
 use crate::fake_terminal::FakeTerminal;
+use crate::hidden_terminal::HiddenTerminal;
 use crate::screen::Position;
 use crate::session::{Reaction, Session};
 use crate::Size;
@@ -211,6 +212,12 @@ impl Recording {
             .map(|(_, value)| value.as_str())
     }
 
+    /// The hidden terminal the recorded app ran on, when the recording
+    /// names one farcli knows.
+    pub fn hidden_terminal(&self) -> Option<HiddenTerminal> {
+        self.note("hidden-terminal").and_then(HiddenTerminal::named)
+    }
+
     /// The App profile farcli used for the recorded app.
     pub fn profile(&self) -> AppProfile {
         AppProfile::for_command(self.about.app.as_ref()).0
@@ -236,7 +243,14 @@ impl Replay {
     /// the recorded size with its cursor where it was.
     pub fn start(recording: &Recording, profile: AppProfile) -> Replay {
         let about = &recording.about;
-        let session = Session::start(profile, about.size, about.cursor);
+        // A recording holds what the hidden terminal said besides what the
+        // app wrote, so the session must know which one it was.
+        let session = match recording.hidden_terminal() {
+            Some(hidden_terminal) => {
+                Session::start_on(hidden_terminal, profile, about.size, about.cursor)
+            }
+            None => Session::start(profile, about.size, about.cursor),
+        };
         Replay::new(recording, Some(session))
     }
 

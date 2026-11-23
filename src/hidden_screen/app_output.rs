@@ -22,6 +22,9 @@ pub(crate) enum Piece {
     ForTerminal(Vec<u8>),
     /// The app asks where its cursor is.
     CursorPositionAsked,
+    /// Someone asks what kind of terminal this is: the app, or the hidden
+    /// terminal itself when it starts.
+    TerminalKindAsked(Vec<u8>),
     /// The app starts drawing a frame that must not be shown half done.
     FrameStarts,
     /// The frame is complete.
@@ -244,6 +247,10 @@ fn control_piece(code: Vec<u8>) -> Vec<Piece> {
             _ => vec![Piece::Drawing(code)],
         },
         (None, [], b'n') if first_param() == 6 => vec![Piece::CursorPositionAsked],
+        (None, [], b'c') if first_param() == 0 => vec![Piece::TerminalKindAsked(code)],
+        // The hidden terminal says that its own window, which nobody sees,
+        // was shown or hidden. That is not the Terminal's window.
+        (None, [], b't') if matches!(params, b"1" | b"2") => Vec::new(),
         // Moving the cursor, erasing and inserting, scrolling, tab stops,
         // styles, margins, saving the cursor and the non-private modes.
         (
@@ -285,12 +292,12 @@ fn control_piece(code: Vec<u8>) -> Vec<Piece> {
 fn private_mode_pieces(params: &[u8], last: u8) -> Vec<Piece> {
     params
         .split(|&byte| byte == b';')
-        .map(|param| {
+        .filter_map(|param| {
             let code = [b"\x1b[?", param, &[last]].concat();
             let mode = std::str::from_utf8(param)
                 .ok()
                 .and_then(|param| param.parse::<u16>().ok());
-            match mode {
+            Some(match mode {
                 // Wide screen, cursor origin, wrapping at the right edge,
                 // cursor visibility, wrapping backwards, side margins, and
                 // saving the cursor.
@@ -298,8 +305,12 @@ fn private_mode_pieces(params: &[u8], last: u8) -> Vec<Piece> {
                 Some(47 | 1047 | 1049) => Piece::ScreenSwitch(code),
                 Some(2026) if last == b'h' => Piece::FrameStarts,
                 Some(2026) => Piece::FrameEnds,
+                // The hidden terminal asks for keys in the form Windows
+                // keeps them in. That is the form farcli always sends, and
+                // nothing the Terminal should be asked for.
+                Some(9001) => return None,
                 _ => Piece::ForTerminal(code),
-            }
+            })
         })
         .collect()
 }

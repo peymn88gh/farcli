@@ -34,6 +34,9 @@ pub enum Aside {
     /// The answer to a question that only the Hidden screen can answer, such
     /// as where the app's cursor is.
     ForApp(Vec<u8>),
+    /// The question of what kind of terminal this is, as it was written.
+    /// Whoever knows who asked decides who answers.
+    TerminalKindAsked(Vec<u8>),
 }
 
 impl HiddenScreen {
@@ -82,6 +85,7 @@ impl HiddenScreen {
                     let answer = format!("\x1b[{};{}R", cursor.row + 1, cursor.col + 1);
                     asides.push(Aside::ForApp(answer.into_bytes()));
                 }
+                Piece::TerminalKindAsked(code) => asides.push(Aside::TerminalKindAsked(code)),
                 Piece::FrameStarts => self.mid_frame = true,
                 Piece::FrameEnds => self.mid_frame = false,
             }

@@ -37,7 +37,7 @@ mod in_terminal {
     use std::time::Duration;
 
     use crate::app_profile::AppProfile;
-    use crate::app_runner::RunningApp;
+    use crate::app_runner::{Host, RunningApp};
     use crate::recording::Event as Recorded;
     use crate::session::{Reaction, Session};
     use crate::terminal::{Terminal, TerminalEvent};
@@ -63,10 +63,20 @@ mod in_terminal {
         program: &OsStr,
         args: &[OsString],
     ) -> io::Result<i32> {
+        // Said before the cursor is read, so that the app starts below it.
+        let host = Host::ready();
+        if let Some(why) = host.why_not_shipped() {
+            eprintln!(
+                "farcli: using the hidden terminal built into Windows, which can damage \
+                 rows of Farsi that hold a Half-space or a vowel mark. Microsoft's newer \
+                 one could not be made ready: {why}"
+            );
+        }
+        let hidden_terminal = host.hidden_terminal();
         let size = terminal.size()?;
         let cursor = terminal.cursor()?;
-        let mut tape = Tape::start(&profile, program, args, size, cursor)?;
-        let mut session = Session::start(profile, size, cursor);
+        let mut tape = Tape::start(&profile, program, args, size, cursor, hidden_terminal)?;
+        let mut session = Session::start_on(hidden_terminal, profile, size, cursor);
         let mut app = RunningApp::start(program, args, size)?;
         let mut app_output = app.take_output();
         let mut app_input = app.take_input();

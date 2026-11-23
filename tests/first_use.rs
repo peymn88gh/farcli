@@ -52,6 +52,11 @@ fn run_farcli_in_a_terminal(args: &[&str]) -> (String, i32) {
                     let answer = format!("\x1b[{};{}R", cursor.row + 1, cursor.col + 1);
                     let _ = input.write_all(answer.as_bytes());
                 }
+                // The hidden terminal farcli ships also asks what kind of
+                // terminal it is on, and waits a second for the answer.
+                if bytes.windows(3).any(|window| window == b"\x1b[c") {
+                    let _ = input.write_all(b"\x1b[?61c");
+                }
             }
         })
     };

@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 
 use farcli::app_runner::RunningApp;
 use farcli::fake_terminal::FakeTerminal;
+use farcli::hidden_terminal::HiddenTerminal;
 use farcli::recording::{Event, Recording, Replay};
 use farcli::screen::Position;
 use farcli::Size;
@@ -61,11 +62,13 @@ fn farcli_records_its_session_to_the_file_it_is_told_to() {
     let mut output = app.take_output();
     let mut input = app.take_input();
     let app = Arc::new(app);
+    let on = app.hidden_terminal();
     let terminal = Arc::new(Mutex::new(FakeTerminal::new(size)));
     let reader = {
         let terminal = Arc::clone(&terminal);
         let mut answers = input.try_clone().unwrap();
         thread::spawn(move || {
+            let mut asked_what_kind = 0;
             let mut buffer = [0u8; 65536];
             while let Ok(count @ 1..) = output.read(&mut buffer) {
                 let bytes = &buffer[..count];
@@ -75,7 +78,13 @@ fn farcli_records_its_session_to_the_file_it_is_told_to() {
                 if bytes.windows(4).any(|window| window == b"\x1b[6n") {
                     answers.write_all(b"\x1b[1;1R").unwrap();
                 }
+                // The shipped one also asks what kind of terminal it is on.
+                if bytes.windows(3).any(|window| window == b"\x1b[c") {
+                    asked_what_kind += 1;
+                    answers.write_all(b"\x1b[?61c").unwrap();
+                }
             }
+            asked_what_kind
         })
     };
     let waiter = {
@@ -101,8 +110,13 @@ fn farcli_records_its_session_to_the_file_it_is_told_to() {
         thread::sleep(Duration::from_millis(20));
     }
     assert_eq!(waiter.join().unwrap().unwrap(), 0);
-    reader.join().unwrap();
+    let asked_what_kind = reader.join().unwrap();
     assert!(shows("heard hi"));
+    // The hidden terminal this test stands in a Terminal with may ask what
+    // kind of terminal it is on. The one inside farcli asks farcli, and
+    // that question is not passed on to the Terminal.
+    let stand_in_asks = usize::from(on == HiddenTerminal::Shipped);
+    assert_eq!(asked_what_kind, stand_in_asks);
 
     let recording = Recording::load(&file).unwrap();
     fs::remove_dir_all(&folder).unwrap();
@@ -116,6 +130,20 @@ fn farcli_records_its_session_to_the_file_it_is_told_to() {
         .note("windows-version")
         .is_some_and(|version| version.contains("Windows")));
     assert_eq!(recording.note("command"), Some("claude"));
+    // farcli ran the app on the same hidden terminal this test got, and the
+    // recording says which.
+    assert_eq!(
+        recording
+            .note("hidden-terminal")
+            .and_then(HiddenTerminal::named),
+        Some(on)
+    );
+    if cfg!(target_arch = "x86_64") {
+        assert_eq!(on, HiddenTerminal::Shipped);
+        assert!(recording
+            .note("hidden-terminal")
+            .is_some_and(|name| name.contains(farcli::hidden_terminal::SHIPPED_VERSION)));
+    }
 
     let mut replay = Replay::start(&recording, recording.profile());
     replay.finish();

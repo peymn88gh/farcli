@@ -8,6 +8,7 @@
 use crate::app_profile::AppProfile;
 use crate::correction;
 use crate::hidden_screen::{Aside, HiddenScreen};
+use crate::hidden_terminal::HiddenTerminal;
 use crate::painter::{Frame, Painter};
 use crate::screen::Position;
 use crate::Size;
@@ -16,7 +17,15 @@ pub struct Session {
     profile: AppProfile,
     hidden_screen: HiddenScreen,
     painter: Painter,
+    /// True until the hidden terminal's own question about what kind of
+    /// terminal it is on has been answered.
+    hidden_terminal_is_asking: bool,
 }
+
+/// What farcli tells a hidden terminal that asks what kind of terminal it
+/// is on: a plain one. The Hidden screen keeps no pictures and moves no
+/// rectangles, which are the extras a hidden terminal would otherwise use.
+const TERMINAL_KIND: &[u8] = b"\x1b[?61c";
 
 /// What farcli does in answer to one thing that happened.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -28,13 +37,30 @@ pub struct Reaction {
 }
 
 impl Session {
-    /// Starts a session in a Terminal of `size` whose cursor is at `cursor`.
-    /// The Target app's hidden terminal must have the same size.
+    /// Starts a session in a Terminal of `size` whose cursor is at `cursor`,
+    /// fed what the Target app wrote with nothing in between that asks
+    /// questions of its own. The Target app's hidden terminal must have the
+    /// same size.
     pub fn start(profile: AppProfile, size: Size, cursor: Position) -> Session {
         Session {
             profile,
             hidden_screen: HiddenScreen::new(size, cursor),
             painter: Painter::new(size),
+            hidden_terminal_is_asking: false,
+        }
+    }
+
+    /// Starts a session fed by `hidden_terminal`, which may say things of
+    /// its own besides passing on what the Target app wrote.
+    pub fn start_on(
+        hidden_terminal: HiddenTerminal,
+        profile: AppProfile,
+        size: Size,
+        cursor: Position,
+    ) -> Session {
+        Session {
+            hidden_terminal_is_asking: hidden_terminal.asks_what_it_is_on(),
+            ..Session::start(profile, size, cursor)
         }
     }
 
@@ -45,6 +71,14 @@ impl Session {
             match aside {
                 Aside::ForTerminal(code) => reaction.for_terminal.extend(code),
                 Aside::ForApp(answer) => reaction.for_app.extend(answer),
+                // The first to ask is the hidden terminal itself, before
+                // the app has written anything. After that it is the app,
+                // and the app means the Terminal.
+                Aside::TerminalKindAsked(_) if self.hidden_terminal_is_asking => {
+                    self.hidden_terminal_is_asking = false;
+                    reaction.for_app.extend(TERMINAL_KIND);
+                }
+                Aside::TerminalKindAsked(code) => reaction.for_terminal.extend(code),
             }
         }
         if !self.hidden_screen.mid_frame() {

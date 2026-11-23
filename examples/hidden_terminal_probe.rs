@@ -157,6 +157,12 @@ fn main() -> ExitCode {
                     let answer = format!("\x1b[{};{}R", cursor.row + 1, cursor.col + 1);
                     let _ = answers.write_all(answer.as_bytes());
                 }
+                // It also answers when asked what kind of terminal it is.
+                // The hidden terminal farcli ships asks that as it starts
+                // and waits a second for the answer; programs ask it too.
+                if bytes.windows(3).any(|window| window == b"\x1b[c") {
+                    let _ = answers.write_all(b"\x1b[?61c");
+                }
             }
             all
         })

@@ -2,3 +2,4 @@
 # byte for byte.
 tests/fixtures/** -text
 assets/vazir-code/** -text
+assets/hidden-terminal/** -text

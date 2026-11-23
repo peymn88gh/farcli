@@ -60,6 +60,30 @@ fn piped_run_returns_the_apps_exit_status() {
 }
 
 #[test]
+fn a_piped_run_unpacks_nothing_into_the_users_folders() {
+    // In a Terminal, farcli unpacks the hidden terminal it ships into the
+    // account's local application data. Piped, it uses no hidden terminal
+    // and must leave no trace.
+    let local = std::env::temp_dir().join(format!("farcli-piped-local-{}", std::process::id()));
+    fs::create_dir_all(&local).unwrap();
+    let mut farcli = farcli();
+    farcli.env("LOCALAPPDATA", &local);
+    if cfg!(windows) {
+        farcli.args(["cmd", "/d", "/c", "echo out"]);
+    } else {
+        farcli.args(["sh", "-c", "echo out"]);
+    }
+
+    let output = farcli.output().unwrap();
+
+    assert!(output.status.success());
+    assert_eq!(output.stderr, b"");
+    let left_behind: Vec<_> = fs::read_dir(&local).unwrap().collect();
+    fs::remove_dir_all(&local).unwrap();
+    assert!(left_behind.is_empty(), "{left_behind:?}");
+}
+
+#[test]
 fn piped_input_reaches_the_app() {
     let mut farcli = farcli()
         .arg("sort")

@@ -1,0 +1,28 @@
+Microsoft's hidden terminal (ConPTY)
+====================================
+
+conpty.dll and OpenConsole.exe are Microsoft's, from the Windows Terminal
+project. farcli carries the two files inside its program, unpacks them to a
+folder of the current user the first time it runs a Target app in a Terminal,
+and runs the Target app on them. See docs/adr/0002 for why.
+
+The files are unchanged from Microsoft's package on nuget.org, for 64-bit
+Intel and AMD processors (x64):
+
+    Microsoft.Windows.Console.ConPTY 1.25.261109001
+    https://www.nuget.org/packages/Microsoft.Windows.Console.ConPTY/1.25.261109001
+    package          SHA-256 3d77f535df848e44225c2a8912ac844fecb23f3057732b639f3034b587496f09
+    runtimes/win-x64/native/conpty.dll
+                     SHA-256 e971856f89748dc3b458125e9afdd79b5e9574a7c937676116d3cbbd3b71f492
+    build/native/runtimes/x64/OpenConsole.exe
+                     SHA-256 b17e48b07ef153b420f0a6e178bacd31fb4c3390e21ae746586213fc0719a775
+
+Both files carry Microsoft's own signature (signer "Microsoft Corporation").
+In PowerShell, `Get-AuthenticodeSignature FILE` checks it.
+
+The two files are not part of farcli and are not covered by farcli's MIT
+licence. They are Copyright (c) Microsoft Corporation and keep their own
+terms: the package names its licence as MIT, and LICENSE in this folder is
+the licence file of the project they are built from,
+https://github.com/microsoft/terminal. farcli puts a copy of that licence
+and of this notice beside the files wherever it unpacks them.

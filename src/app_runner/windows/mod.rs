@@ -1,7 +1,12 @@
 //! The hidden terminal on Windows: a pseudoconsole (ConPTY) with the Target
 //! app attached to it.
+//!
+//! There are two. farcli ships Microsoft's newer one and uses it whenever
+//! its files can be made ready; otherwise it uses the one built into
+//! Windows. `docs/adr/0002` says why.
 
 mod command_line;
+mod shipped;
 
 use std::ffi::{c_void, OsStr, OsString};
 use std::fs::File;
@@ -11,7 +16,7 @@ use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::process::{Command, Stdio};
 use std::ptr;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use windows_sys::Win32::Foundation::{HANDLE, WAIT_OBJECT_0};
 use windows_sys::Win32::System::Console::{
@@ -26,10 +31,83 @@ use windows_sys::Win32::System::Threading::{
     PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, STARTF_USESTDHANDLES, STARTUPINFOEXW,
 };
 
+use crate::hidden_terminal::HiddenTerminal;
 use crate::Size;
+
+pub use shipped::ShippedFiles;
+
+/// The three calls that make, resize and close a hidden terminal. Both
+/// hidden terminals offer them with the same shape.
+#[derive(Clone, Copy)]
+struct Api {
+    create: unsafe extern "system" fn(COORD, HANDLE, HANDLE, u32, *mut HPCON) -> i32,
+    resize: unsafe extern "system" fn(HPCON, COORD) -> i32,
+    close: unsafe extern "system" fn(HPCON),
+}
+
+/// Tells the shipped hidden terminal to count cells by whole characters as
+/// a reader sees them, marks included, which is how Windows Terminal counts
+/// unless told otherwise. Named `PSEUDOCONSOLE_GLYPH_WIDTH_GRAPHEMES` in
+/// Microsoft's `conpty.h`.
+const COUNT_CELLS_BY_WHOLE_CHARACTERS: u32 = 0x08;
+
+/// The hidden terminal this farcli starts Target apps on.
+pub struct Host {
+    kind: HiddenTerminal,
+    api: Api,
+    flags: u32,
+    why_not_shipped: Option<String>,
+    /// Keeps the shipped files from changing while they are in use.
+    _files: Option<ShippedFiles>,
+}
+
+impl Host {
+    /// The shipped hidden terminal if its files can be made ready and
+    /// loaded, else the one built into Windows. Worked out once: the first
+    /// call unpacks the files if they are not yet in the current user's
+    /// folder.
+    pub fn ready() -> &'static Host {
+        static HOST: OnceLock<Host> = OnceLock::new();
+        HOST.get_or_init(|| {
+            let shipped = ShippedFiles::folder_of_this_user()
+                .and_then(|folder| ShippedFiles::ready_in(&folder))
+                .and_then(|files| Ok((files.load()?, files)));
+            match shipped {
+                Ok((api, files)) => Host {
+                    kind: HiddenTerminal::Shipped,
+                    api,
+                    flags: PSEUDOCONSOLE_INHERIT_CURSOR | COUNT_CELLS_BY_WHOLE_CHARACTERS,
+                    why_not_shipped: None,
+                    _files: Some(files),
+                },
+                Err(error) => Host {
+                    kind: HiddenTerminal::BuiltIn,
+                    api: Api {
+                        create: CreatePseudoConsole,
+                        resize: ResizePseudoConsole,
+                        close: ClosePseudoConsole,
+                    },
+                    flags: PSEUDOCONSOLE_INHERIT_CURSOR,
+                    why_not_shipped: Some(error.to_string()),
+                    _files: None,
+                },
+            }
+        })
+    }
+
+    pub fn hidden_terminal(&self) -> HiddenTerminal {
+        self.kind
+    }
+
+    /// Why the hidden terminal built into Windows is used, when it is.
+    pub fn why_not_shipped(&self) -> Option<&str> {
+        self.why_not_shipped.as_deref()
+    }
+}
 
 /// A Target app running on a hidden terminal.
 pub struct RunningApp {
+    host: &'static Host,
     hidden_terminal: Mutex<Option<HPCON>>,
     process: OwnedHandle,
     output: Option<File>,
@@ -37,16 +115,21 @@ pub struct RunningApp {
 }
 
 impl RunningApp {
-    /// Starts `program` with `args` on a hidden terminal of `size`.
+    /// Starts `program` with `args` on a hidden terminal of `size`: the one
+    /// `Host::ready` gives.
     ///
     /// The hidden terminal starts where the real Terminal's cursor is and
     /// leaves the rows above it alone. To learn where that is, its first
     /// output is the question `ESC [ 6 n`, and nothing more comes until the
-    /// answer `ESC [ row ; column R` is written to its input.
+    /// answer `ESC [ row ; column R` is written to its input. The shipped
+    /// one also asks what kind of terminal it is on (`ESC [ c`) and waits up
+    /// to a second for the answer.
     ///
-    /// After a resize the hidden terminal draws its whole screen again, so
-    /// whoever reads the output need not rearrange text the way it does.
+    /// After a resize the built-in hidden terminal draws its whole screen
+    /// again. The shipped one sends nothing: whoever reads the output
+    /// rearranges its own picture, and the app draws again for the new size.
     pub fn start(program: &OsStr, args: &[OsString], size: Size) -> io::Result<RunningApp> {
+        let host = Host::ready();
         let start_line = command_line::start_line(program, args)?;
 
         let (input_for_app, input) = pipe()?;
@@ -55,11 +138,11 @@ impl RunningApp {
         let mut hidden_terminal: HPCON = 0;
         // SAFETY: both pipe ends are open handles, and the out-pointer is valid.
         let result = unsafe {
-            CreatePseudoConsole(
+            (host.api.create)(
                 coord(size),
                 input_for_app.as_raw_handle() as HANDLE,
                 output_from_app.as_raw_handle() as HANDLE,
-                PSEUDOCONSOLE_INHERIT_CURSOR,
+                host.flags,
                 &mut hidden_terminal,
             )
         };
@@ -75,17 +158,23 @@ impl RunningApp {
             Ok(process) => process,
             Err(error) => {
                 // SAFETY: the pseudoconsole was created above and not yet closed.
-                unsafe { ClosePseudoConsole(hidden_terminal) };
+                unsafe { (host.api.close)(hidden_terminal) };
                 return Err(error);
             }
         };
 
         Ok(RunningApp {
+            host,
             hidden_terminal: Mutex::new(Some(hidden_terminal)),
             process,
             output: Some(File::from(output)),
             input: Some(File::from(input)),
         })
+    }
+
+    /// Which hidden terminal the app is running on.
+    pub fn hidden_terminal(&self) -> HiddenTerminal {
+        self.host.kind
     }
 
     /// What the app draws, as the hidden terminal passes it on. Reading ends
@@ -108,7 +197,7 @@ impl RunningApp {
         let hidden_terminal = self.hidden_terminal.lock().unwrap();
         if let Some(hidden_terminal) = *hidden_terminal {
             // SAFETY: the pseudoconsole is open while it is in the mutex.
-            let result = unsafe { ResizePseudoConsole(hidden_terminal, coord(size)) };
+            let result = unsafe { (self.host.api.resize)(hidden_terminal, coord(size)) };
             if result < 0 {
                 return Err(io::Error::from_raw_os_error(result));
             }
@@ -134,7 +223,7 @@ impl RunningApp {
         }
         if let Some(hidden_terminal) = self.hidden_terminal.lock().unwrap().take() {
             // SAFETY: taking it out of the mutex makes this the only close.
-            unsafe { ClosePseudoConsole(hidden_terminal) };
+            unsafe { (self.host.api.close)(hidden_terminal) };
         }
         Ok(status as i32)
     }
@@ -146,7 +235,7 @@ impl Drop for RunningApp {
             // Stop reading first, so that closing cannot wait on us.
             self.output = None;
             // SAFETY: taking it out of the mutex makes this the only close.
-            unsafe { ClosePseudoConsole(hidden_terminal) };
+            unsafe { (self.host.api.close)(hidden_terminal) };
         }
     }
 }

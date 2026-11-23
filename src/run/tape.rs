@@ -9,6 +9,7 @@ use std::time::Instant;
 
 use crate::app_profile::AppProfile;
 use crate::app_runner;
+use crate::hidden_terminal::HiddenTerminal;
 use crate::recording::{About, Event, Recorder};
 use crate::screen::Position;
 use crate::Size;
@@ -31,6 +32,7 @@ impl Tape {
         args: &[OsString],
         size: Size,
         cursor: Position,
+        hidden_terminal: HiddenTerminal,
     ) -> io::Result<Tape> {
         let Some(file) = env::var_os(RECORD_TO).filter(|file| !file.is_empty()) else {
             return Ok(Tape { recorder: None });
@@ -51,6 +53,9 @@ impl Tape {
         }
         let mut notes = vec![("command".to_string(), command)];
         notes.extend(system_notes());
+        // What a Target app writes reaches farcli through the hidden
+        // terminal, and the two hidden terminals pass it on differently.
+        notes.push(("hidden-terminal".to_string(), hidden_terminal.name()));
         let about = About {
             app: program.to_string_lossy().into_owned(),
             app_version,
@@ -88,19 +93,15 @@ const SYSTEM: &str = "Windows native";
 #[cfg(not(windows))]
 const SYSTEM: &str = std::env::consts::OS;
 
-/// What else identifies the system: on Windows, the bytes a Target app
-/// writes reach farcli redrawn by the hidden terminal, and that redrawing
-/// differs between Windows builds.
+/// What else identifies the system: the hidden terminal built into Windows
+/// draws again what a Target app wrote, and that drawing differs between
+/// Windows builds.
 #[cfg(windows)]
 fn system_notes() -> Vec<(String, String)> {
     let mut notes = Vec::new();
     if let Ok(printed) = app_runner::printed_by(OsStr::new("cmd"), &["/d", "/c", "ver"]) {
         notes.push(("windows-version".to_string(), printed.trim().to_string()));
     }
-    notes.push((
-        "hidden-terminal".to_string(),
-        "ConPTY built into Windows".to_string(),
-    ));
     notes
 }
 
