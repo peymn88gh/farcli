@@ -164,7 +164,7 @@ fn main() -> ExitCode {
             Step::Screen => print_screen("screen now", &terminal.lock().unwrap()),
             Step::KeyByKey(text) => {
                 for character in text.chars() {
-                    let _ = input.write_all(character.encode_utf8(&mut [0; 4]).as_bytes());
+                    let _ = input.write_all(&typed(&character.to_string()));
                     thread::sleep(BETWEEN_KEYS);
                 }
             }
@@ -174,7 +174,7 @@ fn main() -> ExitCode {
                 let characters: Vec<char> = text.chars().collect();
                 for lot in characters.chunks(PASTE_LOT) {
                     let lot: String = lot.iter().collect();
-                    let _ = input.write_all(lot.as_bytes());
+                    let _ = input.write_all(&typed(&lot));
                     thread::sleep(BETWEEN_PASTE_LOTS);
                 }
                 let _ = input.write_all(b"\x1b[201~");
@@ -288,7 +288,7 @@ fn parse_step(text: &str) -> Step {
     let (kind, value) = text.split_once(':').expect("a step looks like kind:value");
     match kind {
         "wait" => Step::Wait(value.parse().expect("milliseconds must be a number")),
-        "type" => Step::Keys(with_numbered_characters(value).into_bytes()),
+        "type" => Step::Keys(typed(&with_numbered_characters(value))),
         "keys" => Step::KeyByKey(with_numbered_characters(value)),
         "paste" => Step::Paste(with_numbered_characters(value)),
         "quiet" => Step::Quiet(value.parse().expect("milliseconds must be a number")),
@@ -304,6 +304,28 @@ fn parse_step(text: &str) -> Step {
         "timed" => Step::Timed(value.as_bytes().to_vec()),
         _ => panic!("unknown step {kind}"),
     }
+}
+
+/// What to write to the hidden terminal for `text` typed on a keyboard.
+///
+/// Plain English characters are written as they are, and the hidden
+/// terminal finds the key for each. For any other character it would make
+/// up a different key sequence (Alt held down while its number is typed),
+/// which programs treat differently from a key of the user's keyboard
+/// layout. So such a character is written as the key code a keyboard layout
+/// sends: one key going down and up that carries the character.
+fn typed(text: &str) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for character in text.chars() {
+        if character.is_ascii() {
+            bytes.push(character as u8);
+            continue;
+        }
+        for unit in character.encode_utf16(&mut [0; 2]) {
+            bytes.extend(format!("\x1b[0;0;{unit};1;0;1_\x1b[0;0;{unit};0;0;1_").into_bytes());
+        }
+    }
+    bytes
 }
 
 /// Replaces each `\u{NUMBER}` in `text` by the character with that number.

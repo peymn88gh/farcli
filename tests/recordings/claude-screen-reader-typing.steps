@@ -1,0 +1,19 @@
+# Free: does anything farcli controls at start change the reordering?
+wait:7000
+screen:
+keys:سلام world 12
+wait:800
+screen:
+hex:0b
+hex:15
+wait:400
+keys:اندازه (33 x 20) است
+wait:800
+screen:
+hex:0b
+hex:15
+wait:400
+hex:03
+wait:500
+hex:03
+wait:2500
