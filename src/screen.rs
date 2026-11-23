@@ -39,6 +39,20 @@ impl Cell {
     pub fn is_blank(&self) -> bool {
         *self == Cell::blank()
     }
+
+    /// A cell the Target app has not drawn since farcli started. The
+    /// Terminal still shows there whatever it showed before, and farcli
+    /// leaves it alone.
+    pub fn left_alone() -> Cell {
+        Cell {
+            character: '\0',
+            ..Cell::blank()
+        }
+    }
+
+    pub fn is_left_alone(&self) -> bool {
+        self.character == '\0'
+    }
 }
 
 /// How a cell takes part in the width of its character.
@@ -131,7 +145,11 @@ pub fn row_text(row: &[Cell]) -> String {
         if cell.width == CellWidth::SecondHalf {
             continue;
         }
-        text.push(cell.character);
+        text.push(if cell.is_left_alone() {
+            ' '
+        } else {
+            cell.character
+        });
         text.extend(&cell.marks);
     }
     text.truncate(text.trim_end_matches(' ').len());

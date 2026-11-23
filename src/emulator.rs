@@ -6,7 +6,7 @@ use std::sync::Arc;
 use alacritty_terminal::event::VoidListener;
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::{Column, Line};
-use alacritty_terminal::term::cell::{Cell as GridCell, Flags};
+use alacritty_terminal::term::cell::{Cell as GridCell, Flags, Hyperlink};
 use alacritty_terminal::term::{Config, Term, TermMode};
 use alacritty_terminal::vte::ansi::{self, NamedColor, Processor};
 
@@ -102,6 +102,33 @@ impl Emulator {
         self.term.grid_mut().clear_history();
     }
 
+    /// Marks every cell on screen as left alone: not drawn by anyone yet.
+    /// A cell stops being left alone when something is drawn on it or it is
+    /// erased, and the mark moves with its row when rows scroll.
+    pub fn mark_all_left_alone(&mut self) {
+        let mark = Hyperlink::new(Some(LEFT_ALONE_MARK), String::new());
+        self.each_cell(|cell| cell.set_hyperlink(Some(mark.clone())));
+    }
+
+    /// Turns every cell that is still left alone into an empty cell.
+    pub fn forget_left_alone(&mut self) {
+        self.each_cell(|cell| {
+            if is_left_alone(cell) {
+                *cell = GridCell::default();
+            }
+        });
+    }
+
+    fn each_cell(&mut self, mut change: impl FnMut(&mut GridCell)) {
+        let (lines, columns) = (self.term.screen_lines(), self.term.columns());
+        let grid = self.term.grid_mut();
+        for line in 0..lines as i32 {
+            for column in 0..columns {
+                change(&mut grid[Line(line)][Column(column)]);
+            }
+        }
+    }
+
     fn line(&self, line: Line) -> Row {
         let grid = self.term.grid();
         (0..self.term.columns())
@@ -110,7 +137,20 @@ impl Emulator {
     }
 }
 
+/// The emulator has no notion of a cell nobody has drawn, so such cells
+/// carry a link with this id. Drawing on a cell or erasing it removes the
+/// link, as it would any other.
+const LEFT_ALONE_MARK: &str = "farcli:left-alone";
+
+fn is_left_alone(cell: &GridCell) -> bool {
+    cell.hyperlink()
+        .is_some_and(|link| link.id() == LEFT_ALONE_MARK)
+}
+
 fn cell(from: &GridCell) -> Cell {
+    if is_left_alone(from) {
+        return Cell::left_alone();
+    }
     let width = if from.flags.contains(Flags::WIDE_CHAR) {
         CellWidth::Two
     } else if from.flags.contains(Flags::WIDE_CHAR_SPACER) {

@@ -7,6 +7,12 @@ description = "Read and type Farsi correctly in Claude Code CLI and Codex CLI"
 license = "MIT"
 repository = "https://github.com/peymn88gh/farcli"
 
+# Cargo.lock holds some Windows support crates at older versions on purpose
+# (parking_lot, parking_lot_core, polling, home, miow). Their newest versions,
+# and windows-sys from 0.61, need `dlltool` and an assembler to build with the
+# `x86_64-pc-windows-gnu` toolchain. Running `cargo update` without those
+# tools installed breaks the build.
+
 [dependencies]
 # Plumbing only: turns a Target app's drawing codes into the Hidden screen.
 alacritty_terminal = { version = "0.26", default-features = false }
@@ -16,9 +22,7 @@ alacritty_terminal = { version = "0.26", default-features = false }
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_Security",
-    "Win32_Storage_FileSystem",
     "Win32_System_Console",
-    "Win32_System_IO",
     "Win32_System_Pipes",
     "Win32_System_Threading",
 ] }

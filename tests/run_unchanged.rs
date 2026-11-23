@@ -175,8 +175,8 @@ fn a_wider_terminal_gives_the_app_the_new_columns() {
 fn keys_the_user_presses_reach_the_app_unchanged() {
     let mut run = Run::start(20, 4);
 
-    // A letter, the Up arrow, Ctrl+C, a Farsi letter, and Shift+Enter the
-    // way Windows Terminal reports it.
+    // A letter, the Up arrow, Ctrl+C, a Farsi letter, and Shift+Enter in
+    // the key report format farcli reads keys in on Windows.
     let keys = "a\x1b[A\x03س\x1b[13;28;13;1;16;1_";
     run.user_types(keys);
 
@@ -263,6 +263,32 @@ fn the_app_starts_below_what_the_terminal_already_shows() {
         ]
     );
     assert_eq!(run.terminal.cursor(), at(4, 2));
+}
+
+#[test]
+fn rows_the_app_erases_lose_what_the_terminal_showed_there_before() {
+    let mut run = Run::start_in(terminal_after_shell_command(20, 6));
+
+    // The app empties every row from the top down, then writes on the fourth.
+    run.app_writes("\x1b[H\x1b[K\r\n\x1b[K\r\n\x1b[K\r\n\x1b[Kfresh\r\n\x1b[K\r\n\x1b[K");
+
+    assert_eq!(run.terminal.screen_text(), ["", "", "", "fresh", "", ""]);
+}
+
+#[test]
+fn drawing_over_what_the_terminal_showed_before_changes_only_the_cells_drawn() {
+    let app_output = "\x1b[1;5Hxy\x1b[2;4H\x1b[K\x1b[4;1Hnew";
+    let mut run = Run::start_in(terminal_after_shell_command(20, 6));
+
+    run.app_writes(app_output);
+
+    let mut direct = terminal_after_shell_command(20, 6);
+    direct.receive(app_output.as_bytes());
+    assert_eq!(run.terminal.screen(), direct.screen());
+    assert_eq!(
+        run.terminal.screen_text(),
+        ["PS> xyr", "not", "PS> farcli demo", "new", "", ""]
+    );
 }
 
 #[test]

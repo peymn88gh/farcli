@@ -15,13 +15,16 @@
 //!
 //! Steps run in order: `wait:MILLISECONDS`, `type:TEXT`, `hex:BYTES` (for
 //! example `hex:1b5b41`), `resize:COLSxROWS`, `screen:` (print what the
-//! Terminal shows now). After the last step the probe waits for the program
-//! to end.
+//! Terminal shows now), `timed:TEXT` (type, and print how long the program
+//! took to send anything back). After the last step the probe waits for the
+//! program to end.
 
 use std::env;
 use std::ffi::OsString;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::{Read, Write};
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -35,6 +38,7 @@ enum Step {
     Keys(Vec<u8>),
     Resize(Size),
     Screen,
+    Timed(Vec<u8>),
 }
 
 fn main() -> ExitCode {
@@ -72,9 +76,11 @@ fn main() -> ExitCode {
     let mut input = app.take_input();
     let app = Arc::new(app);
 
+    let pieces = Arc::new(AtomicU64::new(0));
     let reader = {
         let terminal = Arc::clone(&terminal);
         let mut answers = input.try_clone().expect("could not share the input");
+        let pieces = Arc::clone(&pieces);
         thread::spawn(move || {
             let mut all = Vec::new();
             let mut buffer = [0u8; 65536];
@@ -88,6 +94,7 @@ fn main() -> ExitCode {
                     println!("{}", escaped(bytes));
                 }
                 all.extend_from_slice(bytes);
+                pieces.fetch_add(1, Ordering::SeqCst);
                 let mut terminal = terminal.lock().unwrap();
                 terminal.receive(bytes);
                 // A real Terminal answers when asked where its cursor is,
@@ -119,6 +126,20 @@ fn main() -> ExitCode {
                 app.resize(size).expect("could not resize");
             }
             Step::Screen => print_screen("screen now", &terminal.lock().unwrap()),
+            Step::Timed(bytes) => {
+                let before = pieces.load(Ordering::SeqCst);
+                let pressed = Instant::now();
+                let _ = input.write_all(&bytes);
+                while pieces.load(Ordering::SeqCst) == before
+                    && pressed.elapsed() < Duration::from_secs(2)
+                {
+                    thread::yield_now();
+                }
+                println!(
+                    "--- answered after {} microseconds ---",
+                    pressed.elapsed().as_micros()
+                );
+            }
         }
     }
 
@@ -152,6 +173,10 @@ fn print_screen(title: &str, terminal: &FakeTerminal) {
     for row in terminal.screen_text() {
         println!("|{row}");
     }
+    // Changes whenever a character, colour or style anywhere on screen does.
+    let mut fingerprint = DefaultHasher::new();
+    format!("{:?}", terminal.screen()).hash(&mut fingerprint);
+    println!("--- fingerprint {:016x} ---", fingerprint.finish());
     let cursor = terminal.cursor();
     println!(
         "--- cursor at row {} column {}, {} ---",
@@ -192,6 +217,7 @@ fn parse_step(text: &str) -> Step {
         ),
         "resize" => Step::Resize(parse_size(value)),
         "screen" => Step::Screen,
+        "timed" => Step::Timed(value.as_bytes().to_vec()),
         _ => panic!("unknown step {kind}"),
     }
 }

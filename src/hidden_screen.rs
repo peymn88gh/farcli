@@ -37,9 +37,11 @@ pub enum Aside {
 }
 
 impl HiddenScreen {
-    /// An empty screen with the app's cursor at `cursor`.
+    /// A screen the app has drawn nothing on yet, with the app's cursor at
+    /// `cursor`. Every cell starts out left alone (`Cell::left_alone`).
     pub fn new(size: Size, cursor: Position) -> HiddenScreen {
         let mut emulator = Emulator::new(size, UNCOLLECTED_ROWS);
+        emulator.mark_all_left_alone();
         emulator.feed(format!("\x1b[{};{}H", cursor.row + 1, cursor.col + 1).as_bytes());
         HiddenScreen {
             emulator,
@@ -120,6 +122,9 @@ impl HiddenScreen {
 
     /// The hidden terminal, and so the app, was given a new size.
     pub fn resize(&mut self, size: Size) {
+        // A Terminal rearranges its text for a new size, so nothing on it
+        // is where it was: no cell can be left alone any more.
+        self.emulator.forget_left_alone();
         self.emulator.resize(size);
         // Rows the new size pushed off the top are not the app scrolling.
         self.emulator.forget_scrollback();

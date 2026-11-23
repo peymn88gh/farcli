@@ -46,20 +46,25 @@ struct Shown {
 
 impl Shown {
     fn empty(size: Size, certain: bool) -> Shown {
+        Shown::filled(size, Cell::blank(), certain)
+    }
+
+    fn filled(size: Size, cell: Cell, certain: bool) -> Shown {
         Shown {
-            rows: vec![vec![Cell::blank(); usize::from(size.cols)]; usize::from(size.rows)],
+            rows: vec![vec![cell; usize::from(size.cols)]; usize::from(size.rows)],
             certain,
         }
     }
 }
 
 impl Painter {
-    /// A Painter for a Terminal of `size`. What the Terminal shows already is
-    /// left alone until the frame wants something else there.
+    /// A Painter for a Terminal of `size`. Whatever the Terminal shows
+    /// already stays wherever the frame's cells are left alone
+    /// (`Cell::left_alone`).
     pub fn new(size: Size) -> Painter {
         Painter {
             size,
-            shown: Shown::empty(size, true),
+            shown: Shown::filled(size, Cell::left_alone(), true),
             main_screen_behind: None,
             cursor: None,
             pen: None,
@@ -207,9 +212,29 @@ impl Painter {
             return;
         }
         let cols = wanted.len().min(shown.len());
+
+        // The empty cells at the end of the row are erased in one go, the
+        // way a Target app does it, instead of being written as spaces.
+        let text_end = wanted[..cols]
+            .iter()
+            .rposition(|cell| !cell.is_blank())
+            .map_or(0, |last| last + 1);
+        if shown[text_end..cols].iter().any(|cell| !cell.is_blank()) {
+            self.move_cursor(
+                out,
+                Position {
+                    row: row as u16,
+                    col: text_end as u16,
+                },
+            );
+            self.set_pen(out, &Style::default());
+            out.push_str("\x1b[K");
+            self.shown.rows[row][text_end..cols].fill(Cell::blank());
+        }
+
         let mut col = 0;
-        while col < cols {
-            if wanted[col] == self.shown.rows[row][col] {
+        while col < text_end {
+            if wanted[col] == self.shown.rows[row][col] || wanted[col].is_left_alone() {
                 col += 1;
                 continue;
             }
