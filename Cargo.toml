@@ -24,7 +24,8 @@ unicode-bidi = { version = "0.3", default-features = false, features = ["hardcod
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_Security",
-    # Unpacking and loading the hidden terminal farcli ships.
+    # The hidden terminal's input, a pipe that keeps writes apart, and
+    # unpacking and loading the hidden terminal farcli ships.
     "Win32_Storage_FileSystem",
     "Win32_System_LibraryLoader",
     "Win32_System_Console",

@@ -5,6 +5,7 @@
 //! its files can be made ready; otherwise it uses the one built into
 //! Windows. `docs/adr/0002` says why.
 
+mod app_input;
 mod command_line;
 mod shipped;
 
@@ -34,6 +35,7 @@ use windows_sys::Win32::System::Threading::{
 use crate::hidden_terminal::HiddenTerminal;
 use crate::Size;
 
+pub use app_input::AppInput;
 pub use shipped::ShippedFiles;
 
 /// The three calls that make, resize and close a hidden terminal. Both
@@ -111,7 +113,7 @@ pub struct RunningApp {
     hidden_terminal: Mutex<Option<HPCON>>,
     process: OwnedHandle,
     output: Option<File>,
-    input: Option<File>,
+    input: Option<AppInput>,
 }
 
 impl RunningApp {
@@ -132,7 +134,7 @@ impl RunningApp {
         let host = Host::ready();
         let start_line = command_line::start_line(program, args)?;
 
-        let (input_for_app, input) = pipe()?;
+        let (input_for_app, input) = AppInput::open()?;
         let (output, output_from_app) = pipe()?;
 
         let mut hidden_terminal: HPCON = 0;
@@ -168,7 +170,7 @@ impl RunningApp {
             hidden_terminal: Mutex::new(Some(hidden_terminal)),
             process,
             output: Some(File::from(output)),
-            input: Some(File::from(input)),
+            input: Some(input),
         })
     }
 
@@ -185,8 +187,9 @@ impl RunningApp {
             .expect("the app's output was already taken")
     }
 
-    /// Where keys for the app are written.
-    pub fn take_input(&mut self) -> File {
+    /// Where keys for the app are written, and answers to what the hidden
+    /// terminal asks.
+    pub fn take_input(&mut self) -> AppInput {
         self.input
             .take()
             .expect("the app's input was already taken")
