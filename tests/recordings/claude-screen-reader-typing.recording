@@ -6,122 +6,123 @@ size: 100x30
 cursor: 0,0
 command: claude --safe-mode --model haiku --ax-screen-reader
 windows-version: Microsoft Windows [Version 10.0.22631.6199]
-hidden-terminal: ConPTY built into Windows
+hidden-terminal: Microsoft.Windows.Console.ConPTY 1.25.261109001, shipped with farcli
 display-mode: screen reader (--ax-screen-reader), which draws Logical order
 holds: two short Farsi lines typed in the Input box; nothing is sent
 arguments: --safe-mode keeps the user's own settings, plugins and servers out; --model haiku keeps the reply cheap
 environment: WT_SESSION set as Windows Terminal sets it; TERM, COLORTERM and TERM_PROGRAM not set
 made-with: examples/hidden_terminal_probe played claude-screen-reader-typing.steps into farcli on a hidden terminal, with nobody at the keyboard
 
-20 app \e[6n
-41 app \e[m\e]0;C:\\Users\\farsi.speaker\\.local\\bin\\claude.EXE\x07\e[?25h
-209 app \e]0;claude\x07
-225 app [Screen Reader Mode: on via flag]\r\n
-491 app \e[?2004h
-492 app \e[?2031h\e[?1004h
-492 app \e[?9001l
-492 app \e[<u
-493 app \e[>5u\e[>4;2m
-503 app \e]0;✳ Claude Code\x07
-654 app \e[>0q
-654 app \e[?u
-654 app \e]7501;?\x07
-3244 app Claude Code v2.1.322\r\nHaiku 5.5 · Claude Plan \r\nC:\\Users\\Public\\rtl-demo\r\nwarning: Safe mode: all customizations are disabled (CLAUDE.md, skills, plugins, hooks, MCP, agents,\r\n and more)\r\nRestart without --safe-mode to re-enable\r\nauto mode on (shift+tab to cycle)\r\neffort: medium · /effort\r\n$
-6949 keys \e[0;0;1587;1;0;1_
-6950 keys \e[0;0;1587;0;0;1_
-6950 app \e[?2004h
-6951 app \e[<u\e[>5u\e[>4;2m
-6995 app   س
-7020 keys \e[0;0;1604;1;0;1_
-7020 keys \e[0;0;1604;0;0;1_
-7042 app ل
-7091 keys \e[0;0;1575;1;0;1_
-7091 keys \e[0;0;1575;0;0;1_
-7136 app ا
-7161 keys \e[0;0;1605;1;0;1_
-7161 keys \e[0;0;1605;0;0;1_
-7183 app م
-7231 keys \e[32;57;32;1;0;1_\e[32;57;32;0;0;1_
-7261 app \x20
-7302 keys \e[87;17;119;1;0;1_\e[87;17;119;0;0;1_
-7322 app w
-7372 keys \e[79;24;111;1;0;1_\e[79;24;111;0;0;1_
-7400 app o
-7443 keys \e[82;19;114;1;0;1_\e[82;19;114;0;0;1_
-7462 app r
-7514 keys \e[76;38;108;1;0;1_\e[76;38;108;0;0;1_
-7540 app l
-7584 keys \e[68;32;100;1;0;1_\e[68;32;100;0;0;1_
-7604 app d
-7654 keys \e[32;57;32;1;0;1_\e[32;57;32;0;0;1_
-7681 app \x20
-7725 keys \e[49;2;49;1;0;1_\e[49;2;49;0;0;1_
-7744 app 1
-7795 keys \e[50;3;50;1;0;1_\e[50;3;50;0;0;1_
-7821 app 2
-8674 keys \e[17;29;0;1;8;1_\e[75;37;11;1;8;1_\e[75;37;11;0;8;1_\e[17;29;0;0;0;1_
-8674 keys \e[17;29;0;1;8;1_\e[85;22;21;1;8;1_\e[85;22;21;0;8;1_\e[17;29;0;0;0;1_
-8723 app \e[?25l\e[9;1HCtrl+Y to paste deleted text\e[K\r\n$\e[K\r\nسلام world 12\e[?25h
-9074 keys \e[0;0;1575;1;0;1_
-9074 keys \e[0;0;1575;0;0;1_
-9098 app \e[?25l\r\e[K\e[10;2H\e[?25h
-9114 app   ا
-9145 keys \e[0;0;1606;1;0;1_
-9145 keys \e[0;0;1606;0;0;1_
-9162 app ن
-9215 keys \e[0;0;1583;1;0;1_
-9215 keys \e[0;0;1583;0;0;1_
-9238 app د
-9285 keys \e[0;0;1575;1;0;1_
-9285 keys \e[0;0;1575;0;0;1_
-9300 app ا
-9357 keys \e[0;0;1586;1;0;1_
-9357 keys \e[0;0;1586;0;0;1_
-9376 app ز
-9427 keys \e[0;0;1607;1;0;1_
-9428 keys \e[0;0;1607;0;0;1_
-9453 app ه
-9498 keys \e[32;57;32;1;0;1_\e[32;57;32;0;0;1_
-9515 app \x20
-9568 keys \e[16;42;0;1;16;1_\e[57;10;40;1;16;1_\e[57;10;40;0;16;1_\e[16;42;0;0;0;1_
-9592 app (
-9639 keys \e[51;4;51;1;0;1_\e[51;4;51;0;0;1_
-9656 app 3
-9709 keys \e[51;4;51;1;0;1_\e[51;4;51;0;0;1_
-9734 app 3
-9779 keys \e[32;57;32;1;0;1_\e[32;57;32;0;0;1_
-9796 app \x20
-9850 keys \e[88;45;120;1;0;1_\e[88;45;120;0;0;1_
-9873 app x
-9921 keys \e[32;57;32;1;0;1_\e[32;57;32;0;0;1_
-9951 app \x20
-9991 keys \e[50;3;50;1;0;1_\e[50;3;50;0;0;1_
-10014 app 2
-10061 keys \e[48;11;48;1;0;1_\e[48;11;48;0;0;1_
-10091 app 0
-10131 keys \e[16;42;0;1;16;1_\e[48;11;41;1;16;1_\e[48;11;41;0;16;1_\e[16;42;0;0;0;1_
-10154 app )
-10202 keys \e[32;57;32;1;0;1_\e[32;57;32;0;0;1_
-10230 app \x20
-10272 keys \e[0;0;1575;1;0;1_
-10273 keys \e[0;0;1575;0;0;1_
-10293 app ا
-10342 keys \e[0;0;1587;1;0;1_
-10342 keys \e[0;0;1587;0;0;1_
-10370 app س
-10413 keys \e[0;0;1578;1;0;1_
-10413 keys \e[0;0;1578;0;0;1_
-10432 app ت
-11292 keys \e[17;29;0;1;8;1_\e[75;37;11;1;8;1_\e[75;37;11;0;8;1_\e[17;29;0;0;0;1_
-11292 keys \e[17;29;0;1;8;1_\e[85;22;21;1;8;1_\e[85;22;21;0;8;1_\e[17;29;0;0;0;1_
-11336 app \r$\e[K\r\nاندازه (33 x 20) است
-11693 keys \e[67;0;3;1;8;1_
-11693 keys \e[67;0;3;0;8;1_
-11711 app \e[?25l\e[8;1HPress Ctrl-C again to exit\e[K\r\nCtrl+Y to paste deleted text\e[K\r\n$\e[K\r\n\e[K\e[10;2H\e[?25h
-12193 keys \e[67;0;3;1;8;1_
-12193 keys \e[67;0;3;0;8;1_
-12235 app \e[?1006l
-12235 app \e[?1003l\e[?1002l\e[?1000l
-12237 app \e[?1004l
-12237 app \e[>4m\e[<u\e[?2031l\e[?2004l\e[?1016l
-12255 app \e]0;\x07
+38 app \e[1t
+39 app \e[6n\e[c\e[?1004h\e[?9001h
+39 app \e[1;1H
+216 app \e]0;claude\e\\
+232 app [Screen Reader Mode: on via flag]\r\n
+430 app \e7\e[r\e8\e[?25h
+565 app \e[?2004h\e[?2031h\e[?1004h
+566 app \e[?9001l\e[?9001h
+566 app \e[<u\e[>5u\e[>4;2m
+566 app \e]0;✳ Claude Code\e\\
+755 app \e[>0q
+755 app \e[?u
+755 app \e]7501;?\x07
+756 app \e[c
+756 keys \e[0;0;27;1;0;1_\e[0;0;91;1;0;1_\e[0;0;63;1;0;1_\e[0;0;54;1;0;1_\e[0;0;49;1;0;1_\e[0;0;99;1;0;1_
+3246 app Claude Code v2.1.322\r\nHaiku 5.5 · Claude Plan \r\nC:\\Users\\Public\\rtl-demo\r\nwarning: Safe mode: all customizations are disabled (CLAUDE.md, skills, plugins, hooks, MCP, agents,\r\n and more)\r\nRestart without --safe-mode to re-enable\r\nauto mode on (shift+tab to cycle)\r\neffort: medium · /effort\r\n$\e[2G
+6933 keys \e[0;0;1587;1;0;1_
+6934 keys \e[0;0;1587;0;0;1_
+6935 app \e(B\x0f\e[?2004h\e[<u\e[>5u\e[>4;2m
+6968 app \e[2G  س\e[5G
+7004 keys \e[0;0;1604;1;0;1_
+7004 keys \e[0;0;1604;0;0;1_
+7015 app \e[5Gل\e[6G
+7074 keys \e[0;0;1575;1;0;1_
+7074 keys \e[0;0;1575;0;0;1_
+7088 app \e[6Gا\e[7G
+7144 keys \e[0;0;1605;1;0;1_
+7145 keys \e[0;0;1605;0;0;1_
+7154 app \e[7Gم\e[8G
+7215 keys \e[32;57;32;1;0;1_\e[32;57;32;0;0;1_
+7225 app \e[8G \e[9G
+7285 keys \e[87;17;119;1;0;1_\e[87;17;119;0;0;1_
+7291 app \e[9Gw\e[10G
+7355 keys \e[79;24;111;1;0;1_\e[79;24;111;0;0;1_
+7362 app \e[10Go\e[11G
+7426 keys \e[82;19;114;1;0;1_\e[82;19;114;0;0;1_
+7434 app \e[11Gr\e[12G
+7496 keys \e[76;38;108;1;0;1_\e[76;38;108;0;0;1_
+7503 app \e[12Gl\e[13G
+7567 keys \e[68;32;100;1;0;1_\e[68;32;100;0;0;1_
+7575 app \e[13Gd\e[14G
+7637 keys \e[32;57;32;1;0;1_\e[32;57;32;0;0;1_
+7646 app \e[14G \e[15G
+7707 keys \e[49;2;49;1;0;1_\e[49;2;49;0;0;1_
+7715 app \e[15G1\e[16G
+7778 keys \e[50;3;50;1;0;1_\e[50;3;50;0;0;1_
+7783 app \e[16G2\e[17G
+8656 keys \e[17;29;0;1;8;1_\e[75;37;11;1;8;1_\e[75;37;11;0;8;1_\e[17;29;0;0;0;1_
+8656 keys \e[17;29;0;1;8;1_\e[85;22;21;1;8;1_\e[85;22;21;0;8;1_\e[17;29;0;0;0;1_
+8680 app \e[2K\e[1A\e[2K\e[GCtrl+Y to paste deleted text\r\n$\r\nسلام world 12\e[14G
+9057 keys \e[0;0;1575;1;0;1_
+9057 keys \e[0;0;1575;0;0;1_
+9073 app \e[2K\e[G\e[1A\e[2G
+9094 app \e[2G  ا\e[5G
+9127 keys \e[0;0;1606;1;0;1_
+9128 keys \e[0;0;1606;0;0;1_
+9138 app \e[5Gن\e[6G
+9198 keys \e[0;0;1583;1;0;1_
+9198 keys \e[0;0;1583;0;0;1_
+9206 app \e[6Gد\e[7G
+9268 keys \e[0;0;1575;1;0;1_
+9269 keys \e[0;0;1575;0;0;1_
+9275 app \e[7Gا\e[8G
+9339 keys \e[0;0;1586;1;0;1_
+9339 keys \e[0;0;1586;0;0;1_
+9342 app \e[8Gز\e[9G
+9409 keys \e[0;0;1607;1;0;1_
+9410 keys \e[0;0;1607;0;0;1_
+9418 app \e[9Gه\e[10G
+9480 keys \e[32;57;32;1;0;1_\e[32;57;32;0;0;1_
+9490 app \e[10G \e[11G
+9550 keys \e[16;42;0;1;16;1_\e[57;10;40;1;16;1_\e[57;10;40;0;16;1_\e[16;42;0;0;0;1_
+9558 app \e[11G(\e[12G
+9621 keys \e[51;4;51;1;0;1_\e[51;4;51;0;0;1_
+9629 app \e[12G3\e[13G
+9691 keys \e[51;4;51;1;0;1_\e[51;4;51;0;0;1_
+9699 app \e[13G3\e[14G
+9762 keys \e[32;57;32;1;0;1_\e[32;57;32;0;0;1_
+9771 app \e[14G \e[15G
+9832 keys \e[88;45;120;1;0;1_\e[88;45;120;0;0;1_
+9837 app \e[15Gx\e[16G
+9902 keys \e[32;57;32;1;0;1_\e[32;57;32;0;0;1_
+9911 app \e[16G \e[17G
+9973 keys \e[50;3;50;1;0;1_\e[50;3;50;0;0;1_
+9980 app \e[17G2\e[18G
+10043 keys \e[48;11;48;1;0;1_\e[48;11;48;0;0;1_
+10051 app \e[18G0\e[19G
+10113 keys \e[16;42;0;1;16;1_\e[48;11;41;1;16;1_\e[48;11;41;0;16;1_\e[16;42;0;0;0;1_
+10119 app \e[19G)\e[20G
+10183 keys \e[32;57;32;1;0;1_\e[32;57;32;0;0;1_
+10188 app \e[20G \e[21G
+10254 keys \e[0;0;1575;1;0;1_
+10255 keys \e[0;0;1575;0;0;1_
+10261 app \e[21Gا\e[22G
+10324 keys \e[0;0;1587;1;0;1_
+10324 keys \e[0;0;1587;0;0;1_
+10332 app \e[22Gس\e[23G
+10395 keys \e[0;0;1578;1;0;1_
+10395 keys \e[0;0;1578;0;0;1_
+10402 app \e[23Gت\e[24G
+11270 keys \e[17;29;0;1;8;1_\e[75;37;11;1;8;1_\e[75;37;11;0;8;1_\e[17;29;0;0;0;1_
+11270 keys \e[17;29;0;1;8;1_\e[85;22;21;1;8;1_\e[85;22;21;0;8;1_\e[17;29;0;0;0;1_
+11288 app \e[2K\e[G$\r\nاندازه (33 x 20) است\e[21G
+11670 keys \e[67;0;3;1;8;1_
+11670 keys \e[67;0;3;0;8;1_
+11672 app \e[2K\e[G\e[1A\e[2G
+11680 app \e[2K\e[1A\e[2K\e[1A\e[2K\e[GPress Ctrl-C again to exit\r\nCtrl+Y to paste deleted text\r\n$\e[2G
+12170 keys \e[67;0;3;1;8;1_
+12171 keys \e[67;0;3;0;8;1_
+12200 app \e[?1006l\e[?1003l\e[?1002l\e[?1000l
+12202 app \e[?1004l\e[?1004h\e[>4m\e[<u\e[?2031l\e[?2004l\e(B\x0f\e[?1016l\e[?1006l\e[?1003l\e[?1002l\e[?1000l\e[?25h\e7\e[r\e8
+12202 app \e]0;\e\\
+12863 app \e[?1004l\e[?9001l

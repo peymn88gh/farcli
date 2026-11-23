@@ -10,6 +10,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
 
+use farcli::hidden_terminal::HiddenTerminal;
 use farcli::recording::{Event, Recording, Replay};
 
 const REPLIES: [&str; 4] = [
@@ -128,6 +129,22 @@ fn every_recording_tells_the_app_its_version_and_the_system() {
 }
 
 #[test]
+fn every_recording_was_made_on_the_hidden_terminal_farcli_ships() {
+    // What reaches farcli depends on the hidden terminal the app ran on.
+    // The one built into Windows damaged rows holding a Half-space (see
+    // docs/adr/0002), so these recordings were made again without it.
+    for name in all_names() {
+        let recording = load(name);
+        assert_eq!(
+            recording.hidden_terminal(),
+            Some(HiddenTerminal::Shipped),
+            "{name}: {:?}",
+            recording.note("hidden-terminal")
+        );
+    }
+}
+
+#[test]
 fn every_recording_replays_through_the_session_and_rows_without_farsi_stay_as_the_app_drew_them() {
     for name in all_names() {
         let recording = load(name);
@@ -178,9 +195,14 @@ fn every_key_the_user_pressed_reaches_the_app_unchanged() {
 
         replay.finish();
 
-        // Besides the keys, the app receives farcli's answers to its
-        // questions about the cursor: `ESC [ row ; column R`.
+        // Besides the keys, the app's side receives farcli's answers. First,
+        // once, what kind of terminal farcli is, which the hidden terminal
+        // asks as it starts. Then where the cursor is, each time it is
+        // asked: `ESC [ row ; column R`.
         let mut received = String::from_utf8(replay.app_received).unwrap();
+        const TERMINAL_KIND: &str = "\x1b[?61c";
+        assert_eq!(received.matches(TERMINAL_KIND).count(), 1, "{name}");
+        received = received.replacen(TERMINAL_KIND, "", 1);
         while let Some(end) = received.find('R') {
             let start = received[..end].rfind("\x1b[").unwrap();
             received.replace_range(start..=end, "");
@@ -352,10 +374,29 @@ fn claude_code_on_windows_draws_farsi_already_reordered_row_by_row() {
     let sent = ")زتنارپ لخاد( x 20 33 و 123 لثم";
     assert!(shows("claude-classic-reply", sent));
     assert!(shows("claude-fullscreen-reply", sent));
+    // The model wrote «... و اندازه‌ی تصویر را (33 x 20) تنظیم کنید.» A
+    // Half-space stays after the letter it follows.
     assert!(shows(
         "claude-fullscreen-reply",
-        "دشاب )x 20 33( دیاب هرجنپ داعبا"
+        ".دینک میظنت )x 20 33( ار ریوصت یه\u{200c}زادنا و"
     ));
+    // A wrapped row that begins with an English word is laid out left to
+    // right on its own, inside a right-to-left paragraph. The model wrote
+    // «... مقدار timeout را روی 123 میلی‌ثانیه بگذار و اندازه‌ی آیکون را
+    // (33 x 20) نگه دار.»
+    // In the classic display a long reply is written in one piece and its
+    // first rows are found by scrolling back.
+    let mut replay = Replay::without_farcli(&load("claude-classic-reply"));
+    replay.finish();
+    assert!(replay
+        .terminal
+        .scrollback_text()
+        .iter()
+        .any(|row| {
+            row.contains(
+        "timeout ار نوکیآ یه\u{200c}زادنا و راذگب هیناثی\u{200c}لیم 123 یور ار (33 x 20) راد هگن."
+    )
+        }));
     // Brackets keep their shape and so face the wrong way.
     let mut replay = Replay::without_farcli(&load(INPUT_PROBES));
     assert!(replay.play_until(|replay| {
@@ -388,6 +429,105 @@ fn codex_draws_farsi_in_logical_order() {
     });
 
     assert!(found);
+}
+
+/// The message pasted in a reply recording, as its steps file gives it:
+/// five rows long in a Terminal of 100 columns, with nine Half-spaces.
+fn pasted_message(name: &str) -> String {
+    let steps = fs::read_to_string(folder().join(format!("{name}.steps"))).unwrap();
+    let pasted = steps
+        .lines()
+        .find_map(|step| step.strip_prefix("paste:"))
+        .unwrap();
+    pasted.replace("\\u{200c}", "\u{200c}")
+}
+
+fn without_spaces(text: &str) -> Vec<char> {
+    let mut characters: Vec<char> = text
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect();
+    characters.sort_unstable();
+    characters
+}
+
+// The two tests below hold what the hidden terminal farcli ships changed
+// (the follow-up on ticket #3). On the one built into Windows the same
+// message arrived with a row garbled, a stray piece of border, spaces lost
+// between words and, in Codex, letters in the wrong places.
+
+#[test]
+fn claude_codes_input_box_keeps_a_message_with_half_spaces_whole_inside_its_borders() {
+    for name in ["claude-classic-reply", "claude-fullscreen-reply"] {
+        let message = pasted_message(name);
+        assert_eq!(message.matches('\u{200c}').count(), 9, "{name}");
+        let mut replay = Replay::without_farcli(&load(name));
+        // The last words of the message, as Claude Code draws them.
+        let pasted = replay.play_until(|replay| {
+            replay
+                .terminal
+                .screen_text()
+                .iter()
+                .any(|row| row.contains(".یطخه\u{200c}س Python دک کولب کی"))
+        });
+        assert!(pasted, "{name}");
+
+        let screen = replay.terminal.screen_text();
+        let is_border = |row: &String| row.chars().count() == 100 && row.chars().all(|c| c == '─');
+        let borders: Vec<usize> = (0..screen.len())
+            .filter(|row| is_border(&screen[*row]))
+            .collect();
+        let [.., top, bottom] = borders[..] else {
+            panic!("{name}: no Input box in {screen:?}");
+        };
+        let rows = &screen[top + 1..bottom];
+        assert_eq!(rows.len(), 5, "{name}: {rows:?}");
+        assert!(rows[0].starts_with('❯'), "{name}: {rows:?}");
+        // Claude Code reorders each row, so the rows hold the message's
+        // characters and words in another order: none missing, none added,
+        // no two words run together.
+        let inside: String = rows
+            .iter()
+            .map(|row| format!("{} ", row.trim_start_matches('❯')))
+            .collect();
+        assert_eq!(
+            without_spaces(&inside),
+            without_spaces(&message),
+            "{name}: {rows:?}"
+        );
+        assert_eq!(
+            inside.split_whitespace().count(),
+            message.split_whitespace().count(),
+            "{name}: {rows:?}"
+        );
+    }
+}
+
+#[test]
+fn codexs_input_box_shows_a_message_with_half_spaces_exactly_as_it_was_pasted() {
+    for name in ["codex-reply", "codex-inline-reply"] {
+        let message = pasted_message(name);
+        let mut replay = Replay::without_farcli(&load(name));
+
+        // The Input box: the row with Codex's marker and the rows under it,
+        // up to the first empty row. Codex draws Logical order.
+        let shown_whole = replay.play_until(|replay| {
+            let screen = replay.terminal.screen_text();
+            screen
+                .iter()
+                .position(|row| row.starts_with('›'))
+                .is_some_and(|first| {
+                    let rows: Vec<&str> = screen[first..]
+                        .iter()
+                        .take_while(|row| !row.is_empty())
+                        .map(|row| row.trim_start_matches('›').trim())
+                        .collect();
+                    rows.len() == 5 && rows.join(" ") == message
+                })
+        });
+
+        assert!(shown_whole, "{name}");
+    }
 }
 
 #[test]
