@@ -18,8 +18,9 @@
 //! example `hex:1b5b41`), `resize:COLSxROWS`, `screen:` (print what the
 //! Terminal shows now), `timed:TEXT` (type, and print how long the program
 //! took to send anything back), `keys:TEXT` (type one character at a time, as
-//! a person does), `paste:TEXT` (as a Terminal pastes it, all at once between
-//! the marks `ESC[200~` and `ESC[201~`), `quiet:MILLISECONDS`
+//! a person does), `paste:TEXT` (as Windows Terminal pastes it: the text as
+//! it is, all at once, and between the marks `ESC[200~` and `ESC[201~` if
+//! the program has asked for them), `quiet:MILLISECONDS`
 //! (wait until the program has sent nothing for that long), `until:TEXT` (wait
 //! until the Terminal shows TEXT). In TEXT, `\u{200c}` stands for the
 //! character with that number, so a Half-space can be seen in a steps file.
@@ -30,7 +31,7 @@ use std::ffi::OsString;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::{Read, Write};
 use std::process::ExitCode;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -119,8 +120,10 @@ fn main() -> ExitCode {
 
     let pieces = Arc::new(AtomicU64::new(0));
     let last_piece = Arc::new(Mutex::new(Instant::now()));
+    let wants_paste_marks = Arc::new(AtomicBool::new(false));
     let reader = {
         let terminal = Arc::clone(&terminal);
+        let wants_paste_marks = Arc::clone(&wants_paste_marks);
         let mut answers = input.try_clone().expect("could not share the input");
         let pieces = Arc::clone(&pieces);
         let last_piece = Arc::clone(&last_piece);
@@ -137,6 +140,18 @@ fn main() -> ExitCode {
                     println!("{}", escaped(bytes));
                 }
                 all.extend_from_slice(bytes);
+                // The program asks for marks around a paste, or stops
+                // asking. The last of the two it wrote counts, and it may
+                // have been cut by the end of a piece.
+                let lately = &all[all.len().saturating_sub(bytes.len() + 8)..];
+                let last = |code: &[u8]| lately.windows(code.len()).rposition(|at| at == code);
+                match (last(b"\x1b[?2004h"), last(b"\x1b[?2004l")) {
+                    (Some(asked), stopped) if Some(asked) > stopped => {
+                        wants_paste_marks.store(true, Ordering::SeqCst)
+                    }
+                    (_, Some(_)) => wants_paste_marks.store(false, Ordering::SeqCst),
+                    _ => {}
+                }
                 pieces.fetch_add(1, Ordering::SeqCst);
                 *last_piece.lock().unwrap() = Instant::now();
                 let mut terminal = terminal.lock().unwrap();
@@ -183,9 +198,16 @@ fn main() -> ExitCode {
                 }
             }
             Step::Paste(text) => {
-                let mut paste = b"\x1b[200~".to_vec();
-                paste.extend(typed(&text));
-                paste.extend(b"\x1b[201~");
+                // A Terminal marks a paste only for a program that asked.
+                let marked = wants_paste_marks.load(Ordering::SeqCst);
+                let mut paste = Vec::new();
+                if marked {
+                    paste.extend(b"\x1b[200~");
+                }
+                paste.extend(text.as_bytes());
+                if marked {
+                    paste.extend(b"\x1b[201~");
+                }
                 let _ = input.write_all(&paste);
             }
             Step::Quiet(milliseconds) => {
