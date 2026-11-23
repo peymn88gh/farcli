@@ -1,0 +1,7 @@
+// Hand-written for farcli's tests: the same setting appears twice, so it is
+// not clear which one VS Code uses.
+{
+    "terminal.integrated.fontFamily": "Consolas",
+    "editor.tabSize": 2,
+    "terminal.integrated.fontFamily": "'Courier New'"
+}

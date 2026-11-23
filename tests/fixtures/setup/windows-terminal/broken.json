@@ -1,0 +1,9 @@
+// Hand-written for farcli's tests: the user was half way through an edit.
+{
+    "profiles": {
+        "defaults": {
+            "font": { "face": "Consolas"
+        },
+        "list": []
+    }
+}

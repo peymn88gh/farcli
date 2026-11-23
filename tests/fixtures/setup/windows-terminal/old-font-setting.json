@@ -1,0 +1,16 @@
+// Hand-written for farcli's tests: a font set the way Windows Terminal
+// wrote it before version 1.10.
+{
+    "profiles": {
+        "defaults": {
+            "fontFace": "Consolas",
+            "fontSize": 11
+        },
+        "list": [
+            {
+                "guid": "{11111111-1111-1111-1111-111111111111}",
+                "name": "PowerShell"
+            }
+        ]
+    }
+}

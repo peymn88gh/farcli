@@ -9,7 +9,15 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 fn farcli() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_farcli"))
+    let mut farcli = Command::new(env!("CARGO_BIN_EXE_farcli"));
+    // Setup must not run when farcli is piped. Should that ever break, it
+    // would run on this folder and not on the real settings of whoever runs
+    // the tests.
+    farcli.env(
+        "FARCLI_PRETEND_MACHINE",
+        std::env::temp_dir().join("farcli-piped-test-machine"),
+    );
+    farcli
 }
 
 #[test]

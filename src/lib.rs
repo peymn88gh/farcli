@@ -10,6 +10,7 @@ pub mod painter;
 pub mod run;
 pub mod screen;
 pub mod session;
+pub mod setup;
 pub mod terminal;
 
 /// The size of a Terminal, or of the hidden terminal, in character cells.

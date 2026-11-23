@@ -1,0 +1,6 @@
+{
+  /* The terminal has no font of its own here,
+     so VS Code gives it the editor's. */
+  "editor.fontFamily": "'Fira Code', Consolas, monospace",
+  "editor.fontLigatures": true
+}

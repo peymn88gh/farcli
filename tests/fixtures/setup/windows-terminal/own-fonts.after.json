@@ -1,0 +1,32 @@
+// Hand-written for farcli's tests: a user who chose fonts and left notes.
+{
+    "$schema": "https://aka.ms/terminal-profiles-schema",
+    /* The font for everything,
+       picked after a long search. */
+    "profiles": {
+        "defaults": {
+            "font": {
+                "face": "Fira Code, Vazir Code WOL, Symbols Nerd Font", // symbols come second
+                "size": 11
+            },
+            "opacity": 95,
+        },
+        "list": [
+            {
+                "guid": "{11111111-1111-1111-1111-111111111111}",
+                "name": "PowerShell"
+            },
+            {
+                "guid": "{33333333-3333-3333-3333-333333333333}",
+                "name": "Notes",
+                // A plainer font for this one.
+                "font": { "face": "Consolas, Vazir Code WOL" }
+            },
+            {
+                "guid": "{44444444-4444-4444-4444-444444444444}",
+                "name": "Big",
+                "font": { "size": 16 }
+            },
+        ]
+    }
+}
