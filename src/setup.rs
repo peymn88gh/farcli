@@ -80,12 +80,15 @@ impl Machine {
             return Some(Machine::pretend(Path::new(&root)));
         }
         #[cfg(windows)]
-        {
+        let found = {
             let fonts = Box::new(windows_account::registry::UserFonts);
             Machine::of_windows_account(|name| env::var_os(name), fonts)
-        }
+        };
+        // The Terminals farcli supports so far are Windows programs, also
+        // when farcli itself runs inside WSL.
         #[cfg(not(windows))]
-        None
+        let found = None;
+        found
     }
 }
 
@@ -150,9 +153,7 @@ fn closing_words(report: &Report) -> String {
 /// corrects the Target app instead of stepping aside.
 fn in_a_terminal() -> bool {
     #[cfg(windows)]
-    {
-        crate::terminal::Terminal::open().is_some()
-    }
+    return crate::terminal::Terminal::open().is_some();
     #[cfg(not(windows))]
     {
         use std::io::IsTerminal;

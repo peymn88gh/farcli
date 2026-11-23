@@ -284,6 +284,79 @@ fn a_settings_file_setup_cannot_change_safely_is_left_alone_and_the_user_is_told
 }
 
 #[test]
+fn the_farsi_font_is_added_to_settings_written_in_other_shapes() {
+    let vs_code = "vscode/settings.json";
+    let windows_terminal = "windows-terminal/settings.json";
+    let terminal_fonts = r#""terminal.integrated.fontFamily": "Consolas, 'Vazir Code WOL', 'Courier New', monospace""#;
+    for (place, before, after) in [
+        // An empty settings file.
+        (vs_code, "{}\n", format!("{{\n    {terminal_fonts}\n}}\n")),
+        // Everything on one line.
+        (
+            vs_code,
+            "{ \"editor.tabSize\": 2 }",
+            format!("{{ {terminal_fonts}, \"editor.tabSize\": 2 }}"),
+        ),
+        // Nothing but a comment.
+        (
+            vs_code,
+            "{\n    // nothing yet\n}\n",
+            format!("{{\n    {terminal_fonts}\n    // nothing yet\n}}\n"),
+        ),
+        // A terminal font set to nothing, which VS Code reads as not set.
+        (
+            vs_code,
+            "{\n  \"terminal.integrated.fontFamily\": \"\"\n}\n",
+            format!("{{\n  {terminal_fonts}\n}}\n"),
+        ),
+        // Windows Terminal with no defaults for its profiles.
+        (
+            windows_terminal,
+            "{\n  \"profiles\": {\n    \"list\": []\n  }\n}\n",
+            concat!(
+                "{\n  \"profiles\": {\n",
+                "    \"defaults\": {\n",
+                "      \"font\": {\n",
+                "        \"face\": \"Cascadia Mono, Vazir Code WOL\"\n",
+                "      }\n",
+                "    },\n",
+                "    \"list\": []\n  }\n}\n"
+            )
+            .to_string(),
+        ),
+        // A font size but no font face, on one line.
+        (
+            windows_terminal,
+            "{ \"profiles\": { \"defaults\": { \"font\": { \"size\": 11 } }, \"list\": [] } }",
+            concat!(
+                "{ \"profiles\": { \"defaults\": { \"font\": { ",
+                "\"face\": \"Cascadia Mono, Vazir Code WOL\", ",
+                "\"size\": 11 } }, \"list\": [] } }"
+            )
+            .to_string(),
+        ),
+        // A font face written with an escape, and Farsi in a name.
+        (
+            windows_terminal,
+            "{\"profiles\":{\"defaults\":{\"font\":{\"face\":\"Fira\\u0020Code\"}},\"list\":[{\"name\":\"پوسته\"}]}}",
+            "{\"profiles\":{\"defaults\":{\"font\":{\"face\":\"Fira Code, Vazir Code WOL\"}},\"list\":[{\"name\":\"پوسته\"}]}}"
+                .to_string(),
+        ),
+    ] {
+        let pc = Pc::new();
+        pc.put(place, before.as_bytes());
+
+        pc.run_setup();
+
+        assert_same_file(&pc.read(place), after.as_bytes());
+        assert_same_file(
+            &pc.read(&format!("{place}.farcli-backup")),
+            before.as_bytes(),
+        );
+    }
+}
+
+#[test]
 fn line_endings_and_a_byte_order_mark_stay_as_they_were() {
     let as_windows_saves = |settings: Vec<u8>| {
         let text = String::from_utf8(settings).unwrap().replace('\n', "\r\n");
