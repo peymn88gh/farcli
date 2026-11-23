@@ -156,16 +156,26 @@ fn an_app_that_did_not_ask_for_the_mouse_leaves_it_to_the_terminal() {
 }
 
 #[test]
-fn keys_typed_fast_through_farcli_reach_the_app_as_the_same_keys() {
-    let outcome = hand_to_app(
+fn keys_typed_fast_through_farcli_reach_either_kind_of_app_as_the_same_keys() {
+    // Typing has no marks around it, however fast it comes: each line break
+    // is the Enter key.
+    let read_as_keys = hand_to_app(
         "typed-fast",
         Some(farcli()),
         Reads::Keys,
         false,
         &as_keys(PASTED),
     );
+    let read_raw = hand_to_app(
+        "typed-fast-raw",
+        Some(farcli()),
+        Reads::Raw,
+        false,
+        &as_keys(PASTED),
+    );
 
-    assert_eq!(outcome.heard, PASTED);
+    assert_eq!(read_as_keys.heard, PASTED);
+    assert_eq!(read_raw.heard, PASTED);
 }
 
 #[test]
