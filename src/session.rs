@@ -6,13 +6,13 @@
 //! Terminal and the bytes to forward to the app.
 
 use crate::app_profile::AppProfile;
+use crate::correction;
 use crate::hidden_screen::{Aside, HiddenScreen};
 use crate::painter::{Frame, Painter};
 use crate::screen::Position;
 use crate::Size;
 
 pub struct Session {
-    #[allow(dead_code)] // Nothing depends on the app yet: there is no correction.
     profile: AppProfile,
     hidden_screen: HiddenScreen,
     painter: Painter,
@@ -90,12 +90,13 @@ impl Session {
     }
 
     fn paint(&mut self) -> Vec<u8> {
-        let frame = Frame {
+        let mut frame = Frame {
             changes: self.hidden_screen.take_changes(),
             rows: self.hidden_screen.rows(),
             cursor: self.hidden_screen.cursor(),
             cursor_visible: self.hidden_screen.cursor_visible(),
         };
+        correction::correct(&mut frame, &self.profile);
         self.painter.paint(&frame)
     }
 }
