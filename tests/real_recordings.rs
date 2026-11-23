@@ -386,17 +386,16 @@ fn claude_code_on_windows_draws_farsi_already_reordered_row_by_row() {
     // (33 x 20) نگه دار.»
     // In the classic display a long reply is written in one piece and its
     // first rows are found by scrolling back.
+    let begins_with_english = concat!(
+        "timeout ار نوکیآ یه\u{200c}زادنا و راذگب ",
+        "هیناثی\u{200c}لیم 123 یور ار (33 x 20) راد هگن."
+    );
     let mut replay = Replay::without_farcli(&load("claude-classic-reply"));
     replay.finish();
-    assert!(replay
-        .terminal
-        .scrollback_text()
+    let scrolled_off = replay.terminal.scrollback_text();
+    assert!(scrolled_off
         .iter()
-        .any(|row| {
-            row.contains(
-        "timeout ار نوکیآ یه\u{200c}زادنا و راذگب هیناثی\u{200c}لیم 123 یور ار (33 x 20) راد هگن."
-    )
-        }));
+        .any(|row| row.contains(begins_with_english)));
     // Brackets keep their shape and so face the wrong way.
     let mut replay = Replay::without_farcli(&load(INPUT_PROBES));
     assert!(replay.play_until(|replay| {
