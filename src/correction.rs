@@ -177,8 +177,10 @@ impl Correction {
             }
             ParagraphStart::Above => Start::Above(self.direction_above),
         };
-        // An app that draws Logical order has nothing to undo: its rows
-        // are the paragraph's lines as they are.
+        // The only screen with regions so far is Claude Code's, and Claude
+        // Code reorders Farsi itself. The rows of an app that draws Logical
+        // order are the paragraph's lines as they are, with nothing to
+        // undo: this is where such an app parts ways.
         debug_assert!(self.profile.reorders_farsi_itself());
         let paragraph = undo::paragraph(&drawn, width, start);
 

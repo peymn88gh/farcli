@@ -9,18 +9,26 @@
 //! forward again. A row for which no order checks out has no reading, and
 //! whoever asked leaves it as the app drew it.
 //!
-//! The screen cannot always settle the order. Two things can be in doubt:
+//! The screen cannot always settle the order. Three things can be in doubt:
 //!
 //! 1. Which way the row was drawn. A row with an English word at its left
 //!    end and Farsi at its right end is what the app draws both for a row
 //!    that begins with the English word and for one that ends with it.
 //! 2. Where a number belongs. In a row drawn right to left, `x 20 33` is
 //!    what the app draws for «33 x 20», for «x 20 33» and for «33 20 x».
+//! 3. Which brackets belong together, when brackets stand between two
+//!    stretches of Farsi. This is rare in text as people write it.
 //!
 //! For those rows the step guesses the likelier reading from the paragraph
 //! the row is in. Every rule of the guess is in this file: `drawn_direction`
-//! for the first doubt, and the order in which `reading` tries its answers
-//! for the second.
+//! for the first doubt, and for the other two the order in which `reading`
+//! tries its answers and `oddness_of_brackets`.
+//!
+//! The doubts only show when a row was drawn against its paragraph's
+//! direction, as a wrapped row that begins with an English word is in a
+//! Farsi paragraph. A row drawn the way its paragraph runs is laid out
+//! with every character where the app had it, whichever reading is taken,
+//! because Layout follows the same reordering rules.
 
 use crate::layout::{self, Bearing, Direction};
 use crate::screen::{Cell, CellWidth};
