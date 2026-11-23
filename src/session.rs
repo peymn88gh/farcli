@@ -13,7 +13,6 @@ use crate::screen::Position;
 use crate::Size;
 
 pub struct Session {
-    #[allow(dead_code)] // Nothing depends on the app yet: there is no correction.
     profile: AppProfile,
     hidden_screen: HiddenScreen,
     painter: Painter,
@@ -97,7 +96,7 @@ impl Session {
             cursor: self.hidden_screen.cursor(),
             cursor_visible: self.hidden_screen.cursor_visible(),
         };
-        correction::correct(&mut frame);
+        correction::correct(&mut frame, &self.profile);
         self.painter.paint(&frame)
     }
 }

@@ -66,6 +66,10 @@ fn joins_backward(character: char) -> bool {
 }
 
 fn forms(letter: char) -> Option<Forms> {
+    // Every letter in the tables below is in Unicode's Arabic block.
+    if !('\u{600}'..='\u{6ff}').contains(&letter) {
+        return None;
+    }
     if let Some(&(_, alone)) = JOIN_BOTH_SIDES.iter().find(|(plain, _)| *plain == letter) {
         return Some(Forms {
             alone,

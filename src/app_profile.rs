@@ -32,6 +32,15 @@ impl AppProfile {
         AppProfile { app: App::Plain }
     }
 
+    /// True when each row that holds Farsi is taken as a paragraph of its
+    /// own, as wide as the Terminal. That is all farcli can do for a program
+    /// it knows nothing about. A Target app's screen has an interface around
+    /// its text, so its rows are left as drawn until farcli can tell the
+    /// two apart.
+    pub(crate) fn every_row_is_a_paragraph(&self) -> bool {
+        self.app == App::Plain
+    }
+
     /// The profile for the app the user named after `farcli`, together with
     /// the program to run for it.
     pub fn for_command(name: &OsStr) -> (AppProfile, OsString) {

@@ -191,6 +191,20 @@ fn every_character_sent_takes_one_cell_of_its_own() {
 }
 
 #[test]
+fn a_vowel_mark_stays_on_its_letter_and_takes_no_cell() {
+    let mut run = Run::start(20, 3);
+
+    // «لطفاً»: the mark is written after the alef, the word's last letter.
+    run.app_writes("لطفا\u{64b}\r\n");
+
+    let alef = run.terminal.cell(at(0, 16));
+    assert_eq!(alef.character, 'ﺎ');
+    assert_eq!(alef.marks, ['\u{64b}']);
+    assert_eq!(run.terminal.cell(at(0, 15)).character, ' ');
+    assert_eq!(run.terminal.cell(at(0, 19)).character, 'ﻟ');
+}
+
+#[test]
 fn a_line_with_no_farsi_is_shown_as_the_program_wrote_it() {
     let output = "\x1b[32mok\x1b[m see (config.json) [1, 2] <a> «b» 50% -3\r\n";
     let mut run = Run::start(50, 3);
@@ -305,6 +319,29 @@ fn the_cursor_stays_put_on_a_left_to_right_line_until_it_is_on_farsi() {
     // which is shown at the right end of its word.
     run.app_writes("\x1b[1;6H");
     assert_eq!(run.terminal.cursor(), at(0, 7));
+}
+
+#[test]
+fn claude_code_and_codex_are_shown_as_they_drew_until_farcli_knows_their_screens() {
+    for profile in [AppProfile::claude_code(), AppProfile::codex()] {
+        let terminal = FakeTerminal::new(Size { cols: 20, rows: 3 });
+        let session = Session::start(profile, terminal.size(), terminal.cursor());
+        let mut run = Run { session, terminal };
+
+        run.app_writes("│ سلام │\r\n");
+
+        assert_eq!(run.terminal.screen_text()[0], "│ سلام │");
+    }
+}
+
+#[test]
+fn cells_the_program_skipped_inside_a_farsi_line_count_as_empty() {
+    // The program writes a word, moves three cells on without drawing them,
+    // and draws a border.
+    let row = shown(20, "سلام\x1b[3C|");
+
+    let on_screen = ["|   ", from_the_right("ﺳﻠﺎﻡ").as_str()].concat();
+    assert_eq!(row, at_right_edge(20, &on_screen));
 }
 
 #[test]
