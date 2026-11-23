@@ -30,15 +30,23 @@ pub(crate) struct Correction {
     /// through, when there is one.
     direction_above: Option<Direction>,
     /// On the alternate screen the app draws the conversation again at
-    /// whatever place the user scrolls to. This holds, for each paragraph
-    /// row that has been shown together with its paragraph's first row,
-    /// the Paragraph direction, so that the row reads the same when the
-    /// rows before it are scrolled out of sight.
-    seen: HashMap<u64, Direction>,
+    /// whatever place the user scrolls to. This holds what each row of a
+    /// reply was found to be while the rows before it were in sight, so
+    /// that it reads the same when they are scrolled out of sight.
+    seen: HashMap<u64, Seen>,
 }
 
-/// More paragraph rows than a long session shows. Past this the rows seen
-/// are forgotten, and are learnt again as they are shown.
+/// What a row of a reply was found to be.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Seen {
+    /// A row of a paragraph with this Paragraph direction.
+    InParagraph(Direction),
+    /// A row of something that is shown as drawn.
+    NotInParagraph,
+}
+
+/// More rows than a long session shows. Past this the rows seen are
+/// forgotten, and are learnt again as they are shown.
 const MOST_ROWS_SEEN: usize = 20_000;
 
 impl Correction {
@@ -115,9 +123,17 @@ impl Correction {
         let mut cut_by_the_top = None;
         for region in &regions {
             let Kind::Paragraph(start) = region.kind else {
+                if self.on_alternate_screen && region.kind != Kind::InputBox {
+                    for row in region.rows.clone() {
+                        let row = drawn_row(&rows[row][region.cols.clone()], false);
+                        self.remember(&row, Seen::NotInParagraph);
+                    }
+                }
                 continue;
             };
-            let direction = self.paragraph(rows, region, start);
+            let Some(direction) = self.paragraph(rows, region, start) else {
+                continue;
+            };
             if region.rows.start < leaving && leaving < region.rows.end {
                 cut_by_the_top = Some(direction);
             }
@@ -127,8 +143,22 @@ impl Correction {
         }
     }
 
-    /// Lays out one paragraph in place and returns its direction.
-    fn paragraph(&mut self, rows: &mut [Row], region: &Region, start: ParagraphStart) -> Direction {
+    fn remember(&mut self, row: &DrawnRow, seen: Seen) {
+        if self.seen.len() > MOST_ROWS_SEEN {
+            self.seen.clear();
+        }
+        self.seen.insert(key(row), seen);
+    }
+
+    /// Lays out one paragraph in place and returns its direction. Returns
+    /// `None`, with nothing changed, for rows that were found earlier not
+    /// to be a paragraph.
+    fn paragraph(
+        &mut self,
+        rows: &mut [Row],
+        region: &Region,
+        start: ParagraphStart,
+    ) -> Option<Direction> {
         let width = region.cols.len();
         let last = region.rows.end - 1;
         let drawn: Vec<DrawnRow> = region
@@ -138,11 +168,13 @@ impl Correction {
             .collect();
         let start = match start {
             ParagraphStart::Here => Start::Here,
-            ParagraphStart::Above if self.on_alternate_screen => Start::Above(
-                drawn
-                    .first()
-                    .and_then(|row| self.seen.get(&key(row)).copied()),
-            ),
+            ParagraphStart::Above if self.on_alternate_screen => {
+                match drawn.first().and_then(|row| self.seen.get(&key(row))) {
+                    Some(Seen::NotInParagraph) => return None,
+                    Some(Seen::InParagraph(direction)) => Start::Above(Some(*direction)),
+                    None => Start::Above(None),
+                }
+            }
             ParagraphStart::Above => Start::Above(self.direction_above),
         };
         // An app that draws Logical order has nothing to undo: its rows
@@ -151,11 +183,8 @@ impl Correction {
         let paragraph = undo::paragraph(&drawn, width, start);
 
         if self.on_alternate_screen && start == Start::Here {
-            if self.seen.len() > MOST_ROWS_SEEN {
-                self.seen.clear();
-            }
             for row in &drawn {
-                self.seen.insert(key(row), paragraph.direction);
+                self.remember(row, Seen::InParagraph(paragraph.direction));
             }
         }
         for (row, logical) in region.rows.clone().zip(&paragraph.rows) {
@@ -172,7 +201,7 @@ impl Correction {
             let line = layout::lay_out_line(logical, paragraph.direction, width);
             rows[row][region.cols.clone()].clone_from_slice(&line.cells);
         }
-        paragraph.direction
+        Some(paragraph.direction)
     }
 }
 

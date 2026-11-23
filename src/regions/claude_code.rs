@@ -213,16 +213,18 @@ impl Walk<'_> {
     /// Ends whatever is being gathered, at the row `end`.
     fn close(&mut self, end: usize) {
         self.close_block();
-        let kind = match self.state {
-            Above::Sent => Kind::SentMessage,
-            Above::InputBox => Kind::InputBox,
+        // A sent message's text starts where a reply's does, after the
+        // mark. The Input box is the whole width, borders and all.
+        let (kind, first_col) = match self.state {
+            Above::Sent => (Kind::SentMessage, TEXT_COL),
+            Above::InputBox => (Kind::InputBox, 0),
             _ => return,
         };
         if self.span_start < end {
             let cols = self.rows[self.span_start].len();
             self.regions.push(Region {
                 rows: self.span_start..end,
-                cols: 0..cols,
+                cols: first_col.min(cols)..cols,
                 kind,
             });
         }
@@ -281,21 +283,23 @@ impl Walk<'_> {
             return;
         }
         // The app wraps a paragraph only where the next word does not fit.
-        // A row that left room for the first word of the row below it
-        // ended its paragraph there, as a line of code or of a poem does.
+        // A row that left room for the first word of the row below it is a
+        // line of its own, as in code with no colours or in a poem. Which
+        // of the two cannot be told, and code must stay as drawn, so only
+        // a block that is one wrapped text is taken as a paragraph.
         let width = cols.len();
-        let mut start = 0;
-        for at in 0..text_rows {
-            let ends_here = at + 1 == text_rows || !wraps_into(&text[at], &text[at + 1], width);
-            if ends_here {
-                let begins = match (start, top) {
-                    (0, Some(_)) => ParagraphStart::Above,
-                    _ => ParagraphStart::Here,
-                };
-                push(start, at + 1, Kind::Paragraph(begins));
-                start = at + 1;
-            }
+        let one_wrapped_text = text
+            .windows(2)
+            .all(|pair| wraps_into(&pair[0], &pair[1], width));
+        if !one_wrapped_text {
+            push(0, text_rows, Kind::Unsure);
+            return;
         }
+        let begins = match top {
+            Some(_) => ParagraphStart::Above,
+            None => ParagraphStart::Here,
+        };
+        push(0, text_rows, Kind::Paragraph(begins));
     }
 }
 

@@ -1,24 +1,31 @@
-//! The recordings of real Claude Code replies in `tests/recordings`, played
-//! through the session: every Farsi paragraph of a reply reads as Layout
-//! shows it from the text the model wrote, in both of Claude Code's display
-//! modes, and everything else on the screen stays as the app drew it.
+//! The recordings of real Claude Code sessions in `tests/recordings`,
+//! played through the session: every Farsi paragraph of a reply reads as
+//! Layout shows it from the text the model wrote, in both of Claude Code's
+//! display modes, and everything else on the screen stays as the app drew
+//! it.
 //!
-//! What the model wrote is in `NAME.reply.md` beside each recording. The
-//! recordings were made in a Terminal of 100 columns, where a reply's text
-//! is drawn in the 98 columns from the third to the last.
+//! What the model wrote is in `NAME.reply.md` beside each reply recording.
+//! The recordings were made in a Terminal of 100 columns, where a reply's
+//! text is drawn in the 98 columns from the third to the last.
 
 mod claude_code;
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::PathBuf;
 
 use claude_code::{as_drawn, direction_of, laid_out, wrapped};
-use farcli::layout::Direction;
 use farcli::recording::{Event, Recording, Replay};
 
 const CLASSIC: &str = "claude-classic-reply";
 const FULLSCREEN: &str = "claude-fullscreen-reply";
+
+/// Sessions in which Farsi is typed into the Input box and nothing is sent.
+const TYPING: [&str; 3] = [
+    "claude-classic-typing",
+    "claude-fullscreen-typing",
+    "claude-classic-input-probes",
+];
 
 /// The width of the area a reply's text is drawn in.
 const WIDTH: usize = 98;
@@ -75,11 +82,6 @@ fn prose_rows(name: &str) -> Vec<ProseRow> {
     rows
 }
 
-/// The last row of the message sent in both recordings, in Logical order.
-/// The message is wrapped in 97 columns.
-const LAST_ROW_SENT: &str =
-    "جدول با سه ستون (نام، توضیح، تعداد) و سه ردیف. ۵. یک بلوک کد Python سه\u{200c}خطی.";
-
 /// Checks one screen shown through farcli against the same screen as the
 /// app drew it: each row of the reply's prose reads as wanted, and every
 /// other row is exactly as drawn. Returns the prose rows it saw.
@@ -104,19 +106,12 @@ fn check_screen(
             seen.push(*at);
             continue;
         }
-        // These recordings were made with colours switched off. With
-        // colours a sent message has a background of its own and is told
-        // apart from a reply wherever it is. Without them, the end of a
-        // sent message at the top of the fullscreen display, with its
-        // first rows scrolled out of sight, looks like the end of a
-        // paragraph of a reply, and is laid out as one.
-        let end_of_sent_message = format!("  {}", as_drawn(LAST_ROW_SENT));
-        let its_start_is_in_sight = drawn[..row].iter().any(|row| row.starts_with('❯'));
-        if *drawn_row == end_of_sent_message && !its_start_is_in_sight {
-            let as_a_paragraph = laid_out(LAST_ROW_SENT, Direction::RightToLeft, WIDTH);
-            assert_eq!(shown_row, &format!("  {as_a_paragraph}"), "{what}");
-            continue;
-        }
+        // This includes the message the user sent. In the fullscreen
+        // display, scrolled up, its last row is the first thing under the
+        // header, with its first rows out of sight. These recordings were
+        // made with colours switched off, so that row has no background
+        // to tell it from the end of a paragraph of a reply: farcli knows
+        // it from having shown the whole message before.
         assert_eq!(shown_row, drawn_row, "{what}");
     }
     seen
@@ -220,49 +215,124 @@ fn a_wrapped_row_that_begins_with_an_english_word_keeps_its_paragraphs_direction
     assert_eq!(row.chars().count(), 100, "{row}");
 }
 
+/// Every pair of a row as the app drew it and the same row as farcli showed
+/// it, over all the screens of a recording at the moments the user is about
+/// to press a key and at the end, with the rows that scrolled off the top.
+fn rows_drawn_and_shown(name: &str) -> BTreeSet<(String, String)> {
+    let recording = load(name);
+    let mut pairs = BTreeSet::new();
+    let mut through_farcli = Replay::start(&recording, recording.profile());
+    let mut alone = Replay::without_farcli(&recording);
+    let mut collect = |through_farcli: &Replay, alone: &Replay| {
+        let mut shown = through_farcli.terminal.scrollback_text();
+        shown.extend(through_farcli.terminal.screen_text());
+        let mut drawn = alone.terminal.scrollback_text();
+        drawn.extend(alone.terminal.screen_text());
+        pairs.extend(drawn.into_iter().zip(shown));
+    };
+    for (_, event) in &recording.events {
+        if matches!(event, Event::UserTyped(_)) {
+            collect(&through_farcli, &alone);
+        }
+        through_farcli.step();
+        alone.step();
+    }
+    through_farcli.finish();
+    alone.finish();
+    collect(&through_farcli, &alone);
+    pairs
+}
+
 #[test]
-fn the_lists_tables_and_code_of_a_reply_stay_as_claude_code_drew_them_for_now() {
-    // Of the rows of a reply that hold Farsi, the paragraphs are laid out
-    // again. List items and table rows wait for their own ticket: they are
-    // shown as the app drew them, reordered by the app and unjoined.
+fn of_the_thirty_rows_of_farsi_in_the_two_replies_the_eight_paragraph_rows_read_as_written() {
+    // What this ticket corrects and what it leaves. The paragraphs of a
+    // reply are laid out from the text the model wrote. List items and
+    // table rows wait for their own ticket: they are shown as Claude Code
+    // drew them, reordered by the app and unjoined.
+    let mut as_the_model_wrote = 0;
+    let mut as_the_app_drew = 0;
     for name in [CLASSIC, FULLSCREEN] {
+        let prose = prose_rows(name);
+        let mut list_items = BTreeSet::new();
+        let mut table_rows = BTreeSet::new();
+        let mut paragraph_rows = BTreeSet::new();
+        for (drawn, shown) in rows_drawn_and_shown(name) {
+            if !drawn.contains(is_farsi) {
+                continue;
+            }
+            let text = drawn.trim_start();
+            if let Some(row) = prose.iter().find(|row| row.drawn == drawn) {
+                assert_eq!(shown, row.wanted, "{name}");
+                paragraph_rows.insert(drawn);
+            } else if text.starts_with("- ") || text.starts_with("1. ") || text.starts_with("2. ") {
+                assert_eq!(shown, drawn, "{name}");
+                // The fullscreen display draws a button over one list
+                // item while the user has scrolled up.
+                let item = drawn.split("  Jump to bottom").next().unwrap();
+                list_items.insert(item.trim_end().to_string());
+            } else if text.starts_with('│') && !text.contains("Jump to bottom") {
+                assert_eq!(shown, drawn, "{name}");
+                table_rows.insert(drawn);
+            }
+        }
+        // Two paragraphs of two rows, a list of five items and one of two,
+        // and a table of a header and three rows.
+        assert_eq!(
+            (paragraph_rows.len(), list_items.len(), table_rows.len()),
+            (4, 7, 4),
+            "{name}"
+        );
+        as_the_model_wrote += paragraph_rows.len();
+        as_the_app_drew += list_items.len() + table_rows.len();
+    }
+    assert_eq!((as_the_model_wrote, as_the_app_drew), (8, 22));
+}
+
+#[test]
+fn the_code_block_of_a_reply_stays_as_claude_code_drew_it() {
+    for name in [CLASSIC, FULLSCREEN] {
+        let pairs = rows_drawn_and_shown(name);
+        for line in [
+            "  nums = [1, 2, 3]",
+            "  total = sum(nums)",
+            "  print(total)",
+        ] {
+            assert!(
+                pairs.contains(&(line.to_string(), line.to_string())),
+                "{name}: {line}"
+            );
+        }
+    }
+}
+
+#[test]
+fn while_farsi_is_typed_into_the_input_box_the_whole_screen_stays_as_claude_code_drew_it() {
+    // The Input box is the app's own until the ticket that makes typing in
+    // it right. Nothing in these sessions is Agent output, so farcli has
+    // nothing to change: every cell and the cursor are as the app left
+    // them, each time the user is about to press a key.
+    for name in TYPING {
         let recording = load(name);
         let mut through_farcli = Replay::start(&recording, recording.profile());
         let mut alone = Replay::without_farcli(&recording);
-        let reply_is_shown = |replay: &Replay| {
-            replay
-                .terminal
-                .screen_text()
-                .iter()
-                .any(|row| row.starts_with("  print(total)"))
-        };
-        assert!(alone.play_until(reply_is_shown), "{name}");
-        while !reply_is_shown(&through_farcli) {
-            assert!(through_farcli.step().is_some(), "{name}");
+        let mut keys = 0;
+        for (index, (_, event)) in recording.events.iter().enumerate() {
+            if matches!(event, Event::UserTyped(_)) {
+                keys += 1;
+                assert_eq!(
+                    through_farcli.terminal.screen(),
+                    alone.terminal.screen(),
+                    "{name}: before event {index}"
+                );
+                assert_eq!(
+                    through_farcli.terminal.cursor(),
+                    alone.terminal.cursor(),
+                    "{name}: before event {index}"
+                );
+            }
+            through_farcli.step();
+            alone.step();
         }
-
-        let shown = through_farcli.terminal.screen_text();
-        let drawn = alone.terminal.screen_text();
-        let farsi_rows = |starts_with: &dyn Fn(&str) -> bool| -> Vec<usize> {
-            (0..drawn.len())
-                .filter(|row| drawn[*row].contains(is_farsi))
-                .filter(|row| starts_with(drawn[*row].trim_start()))
-                .collect()
-        };
-        let list_items = farsi_rows(&|row| {
-            row.starts_with("- ") || row.starts_with(|c: char| c.is_ascii_digit())
-        });
-        let table_rows = farsi_rows(&|row| row.starts_with('│'));
-        // Classic: the first rows of the list have scrolled off already.
-        assert!(list_items.len() >= 4, "{name}: {list_items:?}");
-        assert_eq!(table_rows.len(), 4, "{name}");
-        for row in list_items.into_iter().chain(table_rows) {
-            assert_eq!(shown[row], drawn[row], "{name}, row {row}");
-        }
-        let code = drawn
-            .iter()
-            .position(|row| row == "  nums = [1, 2, 3]")
-            .unwrap();
-        assert_eq!(shown[code..code + 3], drawn[code..code + 3], "{name}");
+        assert!(keys > 50, "{name}");
     }
 }

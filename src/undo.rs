@@ -261,9 +261,27 @@ const MOST_DOUBTS: usize = 10;
 /// The Logical order of a screen row's characters, as positions in the
 /// row, if the app drew the row with the direction `drawn`. When more than
 /// one order gives the same screen row (the second doubt) this is the
-/// likeliest: see `likeliest_sides`. `None` when no order tried gives the
-/// screen row.
+/// likeliest: the first one found, trying the likeliest sides first (see
+/// `sides`), in which every bracket has its partner. `None` when no order
+/// tried gives the screen row.
 fn reading(characters: &[char], drawn: Direction) -> Option<Vec<usize>> {
+    // A row drawn left to right has an English letter as its leftmost
+    // letter, or no letter at all. A row drawn right to left has a Farsi
+    // letter as its rightmost. This settles most rows before any search.
+    let is_letter = |c: &&char| matches!(layout::bearing(**c), Bearing::Left | Bearing::Right);
+    let possible = match drawn {
+        Direction::LeftToRight => characters
+            .iter()
+            .find(is_letter)
+            .is_none_or(|c| layout::bearing(*c) == Bearing::Left),
+        Direction::RightToLeft => characters
+            .iter()
+            .rfind(is_letter)
+            .is_some_and(|c| layout::bearing(*c) == Bearing::Right),
+    };
+    if !possible {
+        return None;
+    }
     let pieces = pieces(characters);
     let doubts: Vec<usize> = (0..pieces.len())
         .filter(|at| matches!(pieces[*at].0, Piece::Digits | Piece::Bracket))
@@ -286,11 +304,65 @@ fn reading(characters: &[char], drawn: Direction) -> Option<Vec<usize>> {
     }
     other_ways.sort_by_key(Vec::len);
 
-    other_ways.iter().find_map(|told| {
+    // The first order found whose brackets sit as brackets are written.
+    // Failing that, the one whose brackets are least odd.
+    let mut least_odd: Option<(usize, Vec<usize>)> = None;
+    for told in &other_ways {
         let levels = levels(&pieces, drawn, told);
         let order = logical_order(&levels);
-        checks_out(characters, &order, drawn).then_some(order)
-    })
+        if !checks_out(characters, &order, drawn) {
+            continue;
+        }
+        let logical: Vec<char> = order.iter().map(|at| characters[*at]).collect();
+        match oddness_of_brackets(&logical) {
+            0 => return Some(order),
+            oddness if least_odd.as_ref().is_none_or(|(least, _)| oddness < *least) => {
+                least_odd = Some((oddness, order))
+            }
+            _ => {}
+        }
+    }
+    least_odd.map(|(_, order)| order)
+}
+
+/// How far the brackets of a text are from the way brackets are written:
+/// in pairs, the opening one against the first word it encloses and the
+/// closing one against the last. Zero when they are written so. A bracket
+/// with no partner counts for more than any number of misplaced spaces.
+///
+/// More than one order of the same row can check out when brackets stand
+/// between two stretches of Farsi, and this is what tells them apart.
+fn oddness_of_brackets(text: &[char]) -> usize {
+    const NO_PARTNER: usize = 100;
+    let mut oddness = 0;
+    let mut open = Vec::new();
+    for (at, character) in text.iter().enumerate() {
+        let before = at.checked_sub(1).map(|at| text[at]);
+        let after = text.get(at + 1).copied();
+        match character {
+            '(' | '[' | '{' | '«' => {
+                open.push(match character {
+                    '(' => ')',
+                    '[' => ']',
+                    '{' => '}',
+                    _ => '»',
+                });
+                if after.is_none_or(|c| c == ' ') {
+                    oddness += 1;
+                }
+            }
+            ')' | ']' | '}' | '»' => {
+                if open.pop() != Some(*character) {
+                    oddness += NO_PARTNER;
+                }
+                if before.is_none_or(|c| c == ' ') {
+                    oddness += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    oddness + open.len() * NO_PARTNER
 }
 
 /// A screen row cut into pieces, each with how many characters it holds.

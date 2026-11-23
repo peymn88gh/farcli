@@ -15,6 +15,9 @@ use farcli::Size;
 pub struct Run {
     pub session: Session,
     pub terminal: FakeTerminal,
+    /// A second Terminal that is sent exactly what the app wrote, with no
+    /// farcli in between: it shows what the app drew.
+    pub without_farcli: FakeTerminal,
 }
 
 impl Run {
@@ -26,17 +29,39 @@ impl Run {
             terminal.size(),
             terminal.cursor(),
         );
-        Run { session, terminal }
+        Run {
+            session,
+            terminal,
+            without_farcli: FakeTerminal::new(Size { cols, rows }),
+        }
     }
 
     pub fn app_writes(&mut self, bytes: impl AsRef<[u8]>) {
         let reaction = self.session.app_wrote(bytes.as_ref());
         self.terminal.receive(&reaction.for_terminal);
+        self.without_farcli.receive(bytes.as_ref());
     }
 
     /// The text of the row at `row`.
     pub fn row(&self, row: usize) -> String {
         self.terminal.screen_text().swap_remove(row)
+    }
+
+    /// The text of the row at `row` as the app drew it.
+    pub fn drawn_row(&self, row: usize) -> String {
+        self.without_farcli.screen_text().swap_remove(row)
+    }
+
+    /// True when the Terminal shows the row at `row` exactly as the app
+    /// drew it: every character, colour and style.
+    pub fn row_is_as_drawn(&self, row: usize) -> bool {
+        self.terminal.screen()[row] == self.without_farcli.screen()[row]
+    }
+
+    /// True when the whole screen, and the cursor, are as the app drew them.
+    pub fn screen_is_as_drawn(&self) -> bool {
+        self.terminal.screen() == self.without_farcli.screen()
+            && self.terminal.cursor() == self.without_farcli.cursor()
     }
 }
 
@@ -193,4 +218,20 @@ pub fn reply(blocks: &[&[&str]]) -> String {
         bytes.push_str("\r\n");
     }
     bytes
+}
+
+/// The bytes Claude Code writes for a reply made of paragraphs, in a
+/// Terminal `cols` wide: it wraps each in the reply's area, which runs from
+/// the third column to the last.
+pub fn reply_of(paragraphs: &[&str], cols: usize) -> String {
+    let wrapped: Vec<Vec<String>> = paragraphs
+        .iter()
+        .map(|paragraph| wrapped(paragraph, cols - 2))
+        .collect();
+    let rows: Vec<Vec<&str>> = wrapped
+        .iter()
+        .map(|rows| rows.iter().map(String::as_str).collect())
+        .collect();
+    let blocks: Vec<&[&str]> = rows.iter().map(Vec::as_slice).collect();
+    reply(&blocks)
 }
