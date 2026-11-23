@@ -152,7 +152,7 @@ mod in_terminal {
                     tape.add(|| Recorded::AppWrote(bytes.clone()));
                     react(session.app_wrote(&bytes))?
                 }
-                Event::Terminal(TerminalEvent::Keys(bytes)) => {
+                Event::Terminal(TerminalEvent::Sent(bytes)) => {
                     tape.add(|| Recorded::UserTyped(bytes.clone()));
                     react(session.user_typed(&bytes))?
                 }

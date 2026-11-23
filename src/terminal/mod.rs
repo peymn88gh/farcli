@@ -12,8 +12,10 @@ use crate::Size;
 /// Something the user did in the Terminal.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TerminalEvent {
-    /// Keys the user pressed, as the bytes the Terminal sent for them.
-    Keys(Vec<u8>),
+    /// What the Terminal sent, as the bytes it sent: keys the user pressed,
+    /// text the user pasted, mouse reports and answers to what the Target
+    /// app asked.
+    Sent(Vec<u8>),
     /// The user gave the window a new size.
     Resized(Size),
 }
