@@ -1,0 +1,28 @@
+[package]
+name = "farcli"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Read and type Farsi correctly in Claude Code CLI and Codex CLI"
+license = "MIT"
+repository = "https://github.com/peymn88gh/farcli"
+
+[dependencies]
+# Plumbing only: turns a Target app's drawing codes into the Hidden screen.
+alacritty_terminal = { version = "0.26", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+# Plumbing only: the hidden terminal (ConPTY) and the Terminal's own console.
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Console",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+] }
+
+[profile.release]
+lto = "thin"
+strip = true

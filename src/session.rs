@@ -1,0 +1,101 @@
+//! The session: everything farcli does between a Target app and a Terminal,
+//! with no real app, no real Terminal and no clock.
+//!
+//! It is fed the bytes the Target app wrote, the keys the user pressed and
+//! the Terminal's size. Each time it answers with the bytes to send to the
+//! Terminal and the bytes to forward to the app.
+
+use crate::app_profile::AppProfile;
+use crate::hidden_screen::{Aside, HiddenScreen};
+use crate::painter::{Frame, Painter};
+use crate::screen::Position;
+use crate::Size;
+
+pub struct Session {
+    #[allow(dead_code)] // Nothing depends on the app yet: there is no correction.
+    profile: AppProfile,
+    hidden_screen: HiddenScreen,
+    painter: Painter,
+}
+
+/// What farcli does in answer to one thing that happened.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Reaction {
+    /// Bytes to send to the Terminal.
+    pub for_terminal: Vec<u8>,
+    /// Bytes to forward to the Target app.
+    pub for_app: Vec<u8>,
+}
+
+impl Session {
+    /// Starts a session in a Terminal of `size` whose cursor is at `cursor`.
+    /// The Target app's hidden terminal must have the same size.
+    pub fn start(profile: AppProfile, size: Size, cursor: Position) -> Session {
+        Session {
+            profile,
+            hidden_screen: HiddenScreen::new(size, cursor),
+            painter: Painter::new(size),
+        }
+    }
+
+    /// The Target app wrote `bytes`.
+    pub fn app_wrote(&mut self, bytes: &[u8]) -> Reaction {
+        let mut reaction = Reaction::default();
+        for aside in self.hidden_screen.app_wrote(bytes) {
+            match aside {
+                Aside::ForTerminal(code) => reaction.for_terminal.extend(code),
+                Aside::ForApp(answer) => reaction.for_app.extend(answer),
+            }
+        }
+        if !self.hidden_screen.mid_frame() {
+            reaction.for_terminal.extend(self.paint());
+        }
+        reaction
+    }
+
+    /// The user pressed keys, which reached farcli as `bytes`.
+    pub fn user_typed(&mut self, bytes: &[u8]) -> Reaction {
+        Reaction {
+            for_terminal: Vec::new(),
+            for_app: bytes.to_vec(),
+        }
+    }
+
+    /// The user gave the Terminal's window a new size. The Target app's
+    /// hidden terminal must be given the same size.
+    pub fn terminal_resized(&mut self, size: Size) -> Reaction {
+        self.hidden_screen.resize(size);
+        self.painter.terminal_resized(size);
+        Reaction {
+            for_terminal: self.paint(),
+            for_app: Vec::new(),
+        }
+    }
+
+    /// True while the Target app is part-way through a frame it asked not to
+    /// be shown half done, so the Terminal is behind the app.
+    pub fn holding_frame(&self) -> bool {
+        self.hidden_screen.mid_frame()
+    }
+
+    /// Shows what the app has drawn so far, because it has taken too long to
+    /// complete its frame. The session has no clock: whoever drives it
+    /// decides what too long is.
+    pub fn release_held_frame(&mut self) -> Reaction {
+        self.hidden_screen.end_frame();
+        Reaction {
+            for_terminal: self.paint(),
+            for_app: Vec::new(),
+        }
+    }
+
+    fn paint(&mut self) -> Vec<u8> {
+        let frame = Frame {
+            changes: self.hidden_screen.take_changes(),
+            rows: self.hidden_screen.rows(),
+            cursor: self.hidden_screen.cursor(),
+            cursor_visible: self.hidden_screen.cursor_visible(),
+        };
+        self.painter.paint(&frame)
+    }
+}
