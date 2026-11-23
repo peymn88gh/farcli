@@ -23,10 +23,12 @@
 //! ```
 //!
 //! The number is milliseconds since the session started. `app` is output
-//! from the Target app, `keys` is what the user typed as it reached farcli,
-//! `size` is a resize of the Terminal, and `release` is the moment farcli
-//! stopped waiting for the app to finish a frame. Bytes are written as
-//! text where they are text; see `escaped` for the rest.
+//! from the Target app, `keys` is what the Terminal sent farcli (keys,
+//! pasted text, mouse reports, answers), `size` is a resize of the Terminal,
+//! and `release` is the moment farcli stopped waiting for the app to finish
+//! a frame. `release-keys` is the moment farcli stopped waiting for the rest
+//! of a code the Terminal had started. Bytes are written as text where they
+//! are text; see `escaped` for the rest.
 
 use std::fmt::Write as _;
 use std::io::{self, Write};
@@ -72,13 +74,17 @@ pub struct About {
 pub enum Event {
     /// The Target app wrote these bytes.
     AppWrote(Vec<u8>),
-    /// The user pressed keys, which reached farcli as these bytes.
+    /// The Terminal sent farcli these bytes: keys the user pressed, text
+    /// the user pasted, what the mouse did, answers to the app's questions.
     UserTyped(Vec<u8>),
     /// The user gave the Terminal's window a new size.
     TerminalResized(Size),
     /// The Target app took too long to finish a frame, and farcli showed
     /// what it had.
     HeldFrameReleased,
+    /// The rest of a code the Terminal had started took too long to come,
+    /// and farcli forwarded the start as it was.
+    HeldInputReleased,
 }
 
 /// Writes a recording as the session goes, one line per event, so that a
@@ -113,6 +119,7 @@ impl<W: Write> Recorder<W> {
                 format!("{milliseconds} size {}x{}\n", size.cols, size.rows)
             }
             Event::HeldFrameReleased => format!("{milliseconds} release\n"),
+            Event::HeldInputReleased => format!("{milliseconds} release-keys\n"),
         };
         self.file.write_all(line.as_bytes())?;
         self.file.flush()
@@ -184,6 +191,7 @@ impl Recording {
                 "keys" => Event::UserTyped(unescaped(value).map_err(|what| bad(&what))?),
                 "size" => Event::TerminalResized(parse_size(value).ok_or_else(|| bad("bad size"))?),
                 "release" => Event::HeldFrameReleased,
+                "release-keys" => Event::HeldInputReleased,
                 _ => return Err(bad("unknown kind of event")),
             };
             events.push((milliseconds, event));
@@ -287,6 +295,7 @@ impl Replay {
                 session.terminal_resized(*size)
             }
             (Some(session), Event::HeldFrameReleased) => session.release_held_frame(),
+            (Some(session), Event::HeldInputReleased) => session.release_held_input(),
             (None, Event::AppWrote(bytes)) => Reaction {
                 for_terminal: bytes.clone(),
                 for_app: Vec::new(),
@@ -295,7 +304,9 @@ impl Replay {
                 self.terminal.resize(*size);
                 Reaction::default()
             }
-            (None, Event::UserTyped(_) | Event::HeldFrameReleased) => Reaction::default(),
+            (None, Event::UserTyped(_) | Event::HeldFrameReleased | Event::HeldInputReleased) => {
+                Reaction::default()
+            }
         };
         self.take(reaction);
         Some(event)
@@ -304,11 +315,17 @@ impl Replay {
     /// Plays everything that is left.
     pub fn finish(&mut self) {
         while self.step().is_some() {}
+        let mut left_over = Vec::new();
         if let Some(session) = &mut self.session {
             if session.holding_frame() {
-                let reaction = session.release_held_frame();
-                self.take(reaction);
+                left_over.push(session.release_held_frame());
             }
+            if session.holding_input() {
+                left_over.push(session.release_held_input());
+            }
+        }
+        for reaction in left_over {
+            self.take(reaction);
         }
     }
 

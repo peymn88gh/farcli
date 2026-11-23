@@ -17,6 +17,7 @@ pub mod screen;
 pub mod session;
 pub mod setup;
 pub mod terminal;
+mod terminal_input;
 mod undo;
 
 /// The size of a Terminal, or of the hidden terminal, in character cells.

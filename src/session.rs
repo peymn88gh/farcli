@@ -11,6 +11,7 @@ use crate::hidden_screen::{Aside, HiddenScreen};
 use crate::hidden_terminal::HiddenTerminal;
 use crate::painter::{Frame, Painter};
 use crate::screen::Position;
+use crate::terminal_input::{Input, TerminalInput};
 use crate::Size;
 
 pub struct Session {
@@ -20,6 +21,10 @@ pub struct Session {
     /// True until the hidden terminal's own question about what kind of
     /// terminal it is on has been answered.
     hidden_terminal_is_asking: bool,
+    terminal_input: TerminalInput,
+    /// True when the hidden terminal must be given a character that came
+    /// with no key as a key, because it would garble the plain character.
+    characters_as_keys: bool,
 }
 
 /// What farcli tells a hidden terminal that asks what kind of terminal it
@@ -47,6 +52,8 @@ impl Session {
             hidden_screen: HiddenScreen::new(size, cursor),
             painter: Painter::new(size),
             hidden_terminal_is_asking: false,
+            terminal_input: TerminalInput::new(),
+            characters_as_keys: false,
         }
     }
 
@@ -60,6 +67,7 @@ impl Session {
     ) -> Session {
         Session {
             hidden_terminal_is_asking: hidden_terminal.asks_what_it_is_on(),
+            characters_as_keys: hidden_terminal.makes_up_keys_for_plain_characters(),
             ..Session::start(profile, size, cursor)
         }
     }
@@ -87,12 +95,36 @@ impl Session {
         reaction
     }
 
-    /// The user pressed keys, which reached farcli as `bytes`.
+    /// The Terminal sent `bytes`: keys the user pressed, text the user
+    /// pasted, what the mouse did, or the Terminal's answer to something
+    /// the Target app asked.
     pub fn user_typed(&mut self, bytes: &[u8]) -> Reaction {
-        Reaction {
-            for_terminal: Vec::new(),
-            for_app: bytes.to_vec(),
+        let inputs = self.terminal_input.read(bytes);
+        self.forward(&inputs)
+    }
+
+    /// True while the start of a code the Terminal sent is kept from the
+    /// Target app because its end has not come yet.
+    pub fn holding_input(&self) -> bool {
+        self.terminal_input.holding()
+    }
+
+    /// Forwards what was kept back as it came, because the rest of it has
+    /// taken too long to come. Whoever drives the session decides what too
+    /// long is.
+    pub fn release_held_input(&mut self) -> Reaction {
+        let inputs = self.terminal_input.release();
+        self.forward(&inputs)
+    }
+
+    /// Every key, pasted character and mouse report passes through here on
+    /// its way to the Target app, one at a time and in the order it came.
+    fn forward(&mut self, inputs: &[Input]) -> Reaction {
+        let mut reaction = Reaction::default();
+        for input in inputs {
+            input.write_for_app(self.characters_as_keys, &mut reaction.for_app);
         }
+        reaction
     }
 
     /// The user gave the Terminal's window a new size. The Target app's
