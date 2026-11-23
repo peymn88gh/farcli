@@ -18,8 +18,8 @@
 //! example `hex:1b5b41`), `resize:COLSxROWS`, `screen:` (print what the
 //! Terminal shows now), `timed:TEXT` (type, and print how long the program
 //! took to send anything back), `keys:TEXT` (type one character at a time, as
-//! a person does), `paste:TEXT` (as a Terminal pastes it, between the marks
-//! `ESC[200~` and `ESC[201~`, a few characters at a time), `quiet:MILLISECONDS`
+//! a person does), `paste:TEXT` (as a Terminal pastes it, all at once between
+//! the marks `ESC[200~` and `ESC[201~`), `quiet:MILLISECONDS`
 //! (wait until the program has sent nothing for that long), `until:TEXT` (wait
 //! until the Terminal shows TEXT). In TEXT, `\u{200c}` stands for the
 //! character with that number, so a Half-space can be seen in a steps file.
@@ -56,13 +56,6 @@ const LONGEST_WAIT: Duration = Duration::from_secs(180);
 
 /// The pause between two characters of `keys:`.
 const BETWEEN_KEYS: Duration = Duration::from_millis(70);
-
-/// How many characters of a paste are written at once, and the pause
-/// before the next lot. A hidden terminal takes a key code that arrives in
-/// two pieces for separate keys, and a paste written all at once reaches
-/// the program under test faster than it passes the keys on.
-const PASTE_LOT: usize = 4;
-const BETWEEN_PASTE_LOTS: Duration = Duration::from_millis(30);
 
 /// Keeps a probed `farcli` from running Setup on the real settings of
 /// whoever is probing: unless `FARCLI_PRETEND_MACHINE` is already set, it
@@ -184,15 +177,10 @@ fn main() -> ExitCode {
                 }
             }
             Step::Paste(text) => {
-                let _ = input.write_all(b"\x1b[200~");
-                thread::sleep(BETWEEN_PASTE_LOTS);
-                let characters: Vec<char> = text.chars().collect();
-                for lot in characters.chunks(PASTE_LOT) {
-                    let lot: String = lot.iter().collect();
-                    let _ = input.write_all(&typed(&lot));
-                    thread::sleep(BETWEEN_PASTE_LOTS);
-                }
-                let _ = input.write_all(b"\x1b[201~");
+                let mut paste = b"\x1b[200~".to_vec();
+                paste.extend(typed(&text));
+                paste.extend(b"\x1b[201~");
+                let _ = input.write_all(&paste);
             }
             Step::Quiet(milliseconds) => {
                 let quiet = Duration::from_millis(milliseconds);

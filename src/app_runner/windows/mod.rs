@@ -1,6 +1,7 @@
 //! The hidden terminal on Windows: a pseudoconsole (ConPTY) with the Target
 //! app attached to it.
 
+mod app_input;
 mod command_line;
 
 use std::ffi::{c_void, OsStr, OsString};
@@ -28,12 +29,14 @@ use windows_sys::Win32::System::Threading::{
 
 use crate::Size;
 
+pub use app_input::AppInput;
+
 /// A Target app running on a hidden terminal.
 pub struct RunningApp {
     hidden_terminal: Mutex<Option<HPCON>>,
     process: OwnedHandle,
     output: Option<File>,
-    input: Option<File>,
+    input: Option<AppInput>,
 }
 
 impl RunningApp {
@@ -49,7 +52,7 @@ impl RunningApp {
     pub fn start(program: &OsStr, args: &[OsString], size: Size) -> io::Result<RunningApp> {
         let start_line = command_line::start_line(program, args)?;
 
-        let (input_for_app, input) = pipe()?;
+        let (input_for_app, input) = AppInput::open()?;
         let (output, output_from_app) = pipe()?;
 
         let mut hidden_terminal: HPCON = 0;
@@ -84,7 +87,7 @@ impl RunningApp {
             hidden_terminal: Mutex::new(Some(hidden_terminal)),
             process,
             output: Some(File::from(output)),
-            input: Some(File::from(input)),
+            input: Some(input),
         })
     }
 
@@ -96,8 +99,9 @@ impl RunningApp {
             .expect("the app's output was already taken")
     }
 
-    /// Where keys for the app are written.
-    pub fn take_input(&mut self) -> File {
+    /// Where keys for the app are written, and answers to what the hidden
+    /// terminal asks.
+    pub fn take_input(&mut self) -> AppInput {
         self.input
             .take()
             .expect("the app's input was already taken")
