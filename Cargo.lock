@@ -101,6 +101,7 @@ name = "farcli"
 version = "0.1.0"
 dependencies = [
  "alacritty_terminal",
+ "unicode-bidi",
  "windows-sys 0.59.0",
 ]
 
@@ -308,6 +309,12 @@ name = "smallvec"
 version = "1.16.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3244542535d5de959d90ec55d1b5ff0fd2bb7b1310223907d5f11932847f7b59"
+
+[[package]]
+name = "unicode-bidi"
+version = "0.3.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c1cb5db39152898a79168971543b1cb5020dff7fe43c8dc468b0885f5e29df5"
 
 [[package]]
 name = "unicode-width"

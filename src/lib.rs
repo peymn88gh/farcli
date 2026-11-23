@@ -3,9 +3,11 @@
 
 pub mod app_profile;
 pub mod app_runner;
+mod correction;
 mod emulator;
 pub mod fake_terminal;
 pub mod hidden_screen;
+pub mod layout;
 pub mod painter;
 pub mod run;
 pub mod screen;
