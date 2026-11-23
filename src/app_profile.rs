@@ -32,6 +32,15 @@ impl AppProfile {
         AppProfile { app: App::Plain }
     }
 
+    /// The arguments that make the app print its version and end, when
+    /// farcli knows the app well enough to ask.
+    pub fn version_args(&self) -> Option<&'static [&'static str]> {
+        match self.app {
+            App::ClaudeCode | App::Codex => Some(&["--version"]),
+            App::Plain => None,
+        }
+    }
+
     /// The profile for the app the user named after `farcli`, together with
     /// the program to run for it.
     pub fn for_command(name: &OsStr) -> (AppProfile, OsString) {

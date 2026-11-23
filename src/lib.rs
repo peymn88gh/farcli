@@ -7,6 +7,7 @@ mod emulator;
 pub mod fake_terminal;
 pub mod hidden_screen;
 pub mod painter;
+pub mod recording;
 pub mod run;
 pub mod screen;
 pub mod session;

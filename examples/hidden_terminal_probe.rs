@@ -9,6 +9,7 @@
 //!   --size COLSxROWS        size of the stand-in Terminal (80x24 unless given)
 //!   --shown TEXT            what the Terminal shows before the program starts
 //!   --do STEP               a step to play; may be given many times
+//!   --steps FILE            steps to play, one per line (`#` starts a comment)
 //!   --give-up-after MS      stop waiting for the program (20000 unless given)
 //!   --raw                   also print every byte the program sends, as it comes
 //! ```
@@ -16,8 +17,13 @@
 //! Steps run in order: `wait:MILLISECONDS`, `type:TEXT`, `hex:BYTES` (for
 //! example `hex:1b5b41`), `resize:COLSxROWS`, `screen:` (print what the
 //! Terminal shows now), `timed:TEXT` (type, and print how long the program
-//! took to send anything back). After the last step the probe waits for the
-//! program to end.
+//! took to send anything back), `keys:TEXT` (type one character at a time, as
+//! a person does), `paste:TEXT` (as a Terminal pastes it, between the marks
+//! `ESC[200~` and `ESC[201~`, a few characters at a time), `quiet:MILLISECONDS`
+//! (wait until the program has sent nothing for that long), `until:TEXT` (wait
+//! until the Terminal shows TEXT). In TEXT, `\u{200c}` stands for the
+//! character with that number, so a Half-space can be seen in a steps file.
+//! After the last step the probe waits for the program to end.
 
 use std::env;
 use std::ffi::OsString;
@@ -39,7 +45,24 @@ enum Step {
     Resize(Size),
     Screen,
     Timed(Vec<u8>),
+    KeyByKey(String),
+    Paste(String),
+    Quiet(u64),
+    Until(String),
 }
+
+/// The longest `quiet:` and `until:` wait for.
+const LONGEST_WAIT: Duration = Duration::from_secs(180);
+
+/// The pause between two characters of `keys:`.
+const BETWEEN_KEYS: Duration = Duration::from_millis(70);
+
+/// How many characters of a paste are written at once, and the pause
+/// before the next lot. A hidden terminal takes a key code that arrives in
+/// two pieces for separate keys, and a paste written all at once reaches
+/// the program under test faster than it passes the keys on.
+const PASTE_LOT: usize = 4;
+const BETWEEN_PASTE_LOTS: Duration = Duration::from_millis(30);
 
 fn main() -> ExitCode {
     let mut size = Size { cols: 80, rows: 24 };
@@ -58,6 +81,16 @@ fn main() -> ExitCode {
             Some("--size") => size = parse_size(&next_text(&mut args)),
             Some("--shown") => shown = next_text(&mut args),
             Some("--do") => steps.push(parse_step(&next_text(&mut args))),
+            Some("--steps") => {
+                let file = next_text(&mut args);
+                let listed = std::fs::read_to_string(&file).expect("could not read the steps");
+                steps.extend(
+                    listed
+                        .lines()
+                        .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
+                        .map(parse_step),
+                );
+            }
             Some("--give-up-after") => {
                 give_up_after = next_text(&mut args).parse().expect("milliseconds")
             }
@@ -77,10 +110,12 @@ fn main() -> ExitCode {
     let app = Arc::new(app);
 
     let pieces = Arc::new(AtomicU64::new(0));
+    let last_piece = Arc::new(Mutex::new(Instant::now()));
     let reader = {
         let terminal = Arc::clone(&terminal);
         let mut answers = input.try_clone().expect("could not share the input");
         let pieces = Arc::clone(&pieces);
+        let last_piece = Arc::clone(&last_piece);
         thread::spawn(move || {
             let mut all = Vec::new();
             let mut buffer = [0u8; 65536];
@@ -95,6 +130,7 @@ fn main() -> ExitCode {
                 }
                 all.extend_from_slice(bytes);
                 pieces.fetch_add(1, Ordering::SeqCst);
+                *last_piece.lock().unwrap() = Instant::now();
                 let mut terminal = terminal.lock().unwrap();
                 terminal.receive(bytes);
                 // A real Terminal answers when asked where its cursor is,
@@ -126,6 +162,50 @@ fn main() -> ExitCode {
                 app.resize(size).expect("could not resize");
             }
             Step::Screen => print_screen("screen now", &terminal.lock().unwrap()),
+            Step::KeyByKey(text) => {
+                for character in text.chars() {
+                    let _ = input.write_all(character.encode_utf8(&mut [0; 4]).as_bytes());
+                    thread::sleep(BETWEEN_KEYS);
+                }
+            }
+            Step::Paste(text) => {
+                let _ = input.write_all(b"\x1b[200~");
+                thread::sleep(BETWEEN_PASTE_LOTS);
+                let characters: Vec<char> = text.chars().collect();
+                for lot in characters.chunks(PASTE_LOT) {
+                    let lot: String = lot.iter().collect();
+                    let _ = input.write_all(lot.as_bytes());
+                    thread::sleep(BETWEEN_PASTE_LOTS);
+                }
+                let _ = input.write_all(b"\x1b[201~");
+            }
+            Step::Quiet(milliseconds) => {
+                let quiet = Duration::from_millis(milliseconds);
+                let started = Instant::now();
+                while last_piece.lock().unwrap().elapsed() < quiet {
+                    if started.elapsed() > LONGEST_WAIT {
+                        println!("--- it never went quiet ---");
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(20));
+                }
+            }
+            Step::Until(wanted) => {
+                let started = Instant::now();
+                let shows = |terminal: &FakeTerminal| {
+                    terminal
+                        .screen_text()
+                        .iter()
+                        .any(|row| row.contains(&wanted))
+                };
+                while !shows(&terminal.lock().unwrap()) {
+                    if started.elapsed() > LONGEST_WAIT {
+                        println!("--- {wanted:?} never showed ---");
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(20));
+                }
+            }
             Step::Timed(bytes) => {
                 let before = pieces.load(Ordering::SeqCst);
                 let pressed = Instant::now();
@@ -208,7 +288,11 @@ fn parse_step(text: &str) -> Step {
     let (kind, value) = text.split_once(':').expect("a step looks like kind:value");
     match kind {
         "wait" => Step::Wait(value.parse().expect("milliseconds must be a number")),
-        "type" => Step::Keys(value.as_bytes().to_vec()),
+        "type" => Step::Keys(with_numbered_characters(value).into_bytes()),
+        "keys" => Step::KeyByKey(with_numbered_characters(value)),
+        "paste" => Step::Paste(with_numbered_characters(value)),
+        "quiet" => Step::Quiet(value.parse().expect("milliseconds must be a number")),
+        "until" => Step::Until(with_numbered_characters(value)),
         "hex" => Step::Keys(
             (0..value.len())
                 .step_by(2)
@@ -220,6 +304,22 @@ fn parse_step(text: &str) -> Step {
         "timed" => Step::Timed(value.as_bytes().to_vec()),
         _ => panic!("unknown step {kind}"),
     }
+}
+
+/// Replaces each `\u{NUMBER}` in `text` by the character with that number.
+fn with_numbered_characters(text: &str) -> String {
+    let mut result = String::new();
+    let mut rest = text;
+    while let Some(at) = rest.find("\\u{") {
+        let (before, numbered) = rest.split_at(at);
+        let end = numbered.find('}').expect("a numbered character ends in }");
+        let number = u32::from_str_radix(&numbered[3..end], 16).expect("bad character number");
+        result.push_str(before);
+        result.push(char::from_u32(number).expect("no such character"));
+        rest = &numbered[end + 1..];
+    }
+    result.push_str(rest);
+    result
 }
 
 /// Shows control bytes as visible text, one line of output per line feed.

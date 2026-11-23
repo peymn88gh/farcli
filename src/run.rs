@@ -7,6 +7,9 @@ use std::io;
 use crate::app_profile::AppProfile;
 use crate::app_runner;
 
+#[cfg(windows)]
+mod tape;
+
 /// Runs `program` with `args` and returns its exit status.
 ///
 /// In a Terminal the app runs on a hidden terminal and farcli repaints the
@@ -35,8 +38,11 @@ mod in_terminal {
 
     use crate::app_profile::AppProfile;
     use crate::app_runner::RunningApp;
+    use crate::recording::Event as Recorded;
     use crate::session::{Reaction, Session};
     use crate::terminal::{Terminal, TerminalEvent};
+
+    use super::tape::Tape;
 
     /// How long a frame the Target app marked as unfinished is kept from the
     /// Terminal before it is shown anyway.
@@ -58,7 +64,9 @@ mod in_terminal {
         args: &[OsString],
     ) -> io::Result<i32> {
         let size = terminal.size()?;
-        let mut session = Session::start(profile, size, terminal.cursor()?);
+        let cursor = terminal.cursor()?;
+        let mut tape = Tape::start(&profile, program, args, size, cursor)?;
+        let mut session = Session::start(profile, size, cursor);
         let mut app = RunningApp::start(program, args, size)?;
         let mut app_output = app.take_output();
         let mut app_input = app.take_input();
@@ -117,6 +125,7 @@ mod in_terminal {
                 match happened.recv_timeout(HELD_FRAME_LIMIT) {
                     Ok(event) => event,
                     Err(RecvTimeoutError::Timeout) => {
+                        tape.add(|| Recorded::HeldFrameReleased);
                         react(session.release_held_frame())?;
                         continue;
                     }
@@ -129,9 +138,16 @@ mod in_terminal {
                 }
             };
             match event {
-                Event::AppWrote(bytes) => react(session.app_wrote(&bytes))?,
-                Event::Terminal(TerminalEvent::Keys(bytes)) => react(session.user_typed(&bytes))?,
+                Event::AppWrote(bytes) => {
+                    tape.add(|| Recorded::AppWrote(bytes.clone()));
+                    react(session.app_wrote(&bytes))?
+                }
+                Event::Terminal(TerminalEvent::Keys(bytes)) => {
+                    tape.add(|| Recorded::UserTyped(bytes.clone()));
+                    react(session.user_typed(&bytes))?
+                }
                 Event::Terminal(TerminalEvent::Resized(size)) => {
+                    tape.add(|| Recorded::TerminalResized(size));
                     app.resize(size)?;
                     react(session.terminal_resized(size))?;
                 }

@@ -9,7 +9,7 @@ use std::io;
 use std::mem;
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::ptr;
 use std::sync::Mutex;
 
@@ -157,6 +157,18 @@ pub fn run_directly(program: &OsStr, args: &[OsString]) -> io::Result<i32> {
     let file = command_line::find_program(program)?;
     let status = Command::new(file).args(args).status()?;
     Ok(status.code().unwrap_or(1))
+}
+
+/// Runs `program` with `args` away from any terminal, waits for it to end
+/// and returns what it printed.
+pub fn printed_by(program: &OsStr, args: &[&str]) -> io::Result<String> {
+    let file = command_line::find_program(program)?;
+    let output = Command::new(file)
+        .args(args)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()?;
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 fn coord(size: Size) -> COORD {
