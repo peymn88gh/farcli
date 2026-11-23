@@ -210,12 +210,18 @@ impl Recording {
             .find(|(noted, _)| noted == name)
             .map(|(_, value)| value.as_str())
     }
+
+    /// The App profile farcli used for the recorded app.
+    pub fn profile(&self) -> AppProfile {
+        AppProfile::for_command(self.about.app.as_ref()).0
+    }
 }
 
 /// A recording being played through a session, joined to the Terminal that
 /// shows the session's output.
 pub struct Replay {
-    session: Session,
+    /// `None` plays the app's output straight to the Terminal.
+    session: Option<Session>,
     /// What a Terminal shows after everything played so far.
     pub terminal: FakeTerminal,
     /// Everything forwarded to the Target app so far.
@@ -230,11 +236,24 @@ impl Replay {
     /// the recorded size with its cursor where it was.
     pub fn start(recording: &Recording, profile: AppProfile) -> Replay {
         let about = &recording.about;
+        let session = Session::start(profile, about.size, about.cursor);
+        Replay::new(recording, Some(session))
+    }
+
+    /// Starts playing `recording` with no farcli in between: the Terminal
+    /// is sent exactly what the Target app wrote, and shows what the app
+    /// drew. Nothing reaches `app_received`.
+    pub fn without_farcli(recording: &Recording) -> Replay {
+        Replay::new(recording, None)
+    }
+
+    fn new(recording: &Recording, session: Option<Session>) -> Replay {
+        let about = &recording.about;
         let mut terminal = FakeTerminal::new(about.size);
         terminal
             .receive(format!("\x1b[{};{}H", about.cursor.row + 1, about.cursor.col + 1).as_bytes());
         Replay {
-            session: Session::start(profile, about.size, about.cursor),
+            session,
             terminal,
             app_received: Vec::new(),
             terminal_received: Vec::new(),
@@ -246,14 +265,23 @@ impl Replay {
     /// the recording is over.
     pub fn step(&mut self) -> Option<Event> {
         let (_, event) = self.events.next()?;
-        let reaction = match &event {
-            Event::AppWrote(bytes) => self.session.app_wrote(bytes),
-            Event::UserTyped(bytes) => self.session.user_typed(bytes),
-            Event::TerminalResized(size) => {
+        let reaction = match (&mut self.session, &event) {
+            (Some(session), Event::AppWrote(bytes)) => session.app_wrote(bytes),
+            (Some(session), Event::UserTyped(bytes)) => session.user_typed(bytes),
+            (Some(session), Event::TerminalResized(size)) => {
                 self.terminal.resize(*size);
-                self.session.terminal_resized(*size)
+                session.terminal_resized(*size)
             }
-            Event::HeldFrameReleased => self.session.release_held_frame(),
+            (Some(session), Event::HeldFrameReleased) => session.release_held_frame(),
+            (None, Event::AppWrote(bytes)) => Reaction {
+                for_terminal: bytes.clone(),
+                for_app: Vec::new(),
+            },
+            (None, Event::TerminalResized(size)) => {
+                self.terminal.resize(*size);
+                Reaction::default()
+            }
+            (None, Event::UserTyped(_) | Event::HeldFrameReleased) => Reaction::default(),
         };
         self.take(reaction);
         Some(event)
@@ -262,9 +290,11 @@ impl Replay {
     /// Plays everything that is left.
     pub fn finish(&mut self) {
         while self.step().is_some() {}
-        if self.session.holding_frame() {
-            let reaction = self.session.release_held_frame();
-            self.take(reaction);
+        if let Some(session) = &mut self.session {
+            if session.holding_frame() {
+                let reaction = session.release_held_frame();
+                self.take(reaction);
+            }
         }
     }
 

@@ -91,10 +91,11 @@ fn text_the_app_writes_shows_on_the_terminal_where_the_app_put_it() {
 }
 
 #[test]
-fn farsi_wide_and_accented_characters_show_as_the_app_wrote_them() {
-    // Farsi with a Half-space, characters two cells wide, a letter with a
-    // separate accent, and a wide character too close to the right edge.
-    let output = "سلام می\u{200c}خواهم\r\n日本語 ok\r\ne\u{301}!\r\n123456789012345678日";
+fn wide_and_accented_characters_show_as_the_app_wrote_them() {
+    // Characters two cells wide, a letter with a separate accent, and a
+    // wide character too close to the right edge. Farsi is laid out by
+    // farcli and has its own tests.
+    let output = "日本語 ok\r\ne\u{301}!\r\n123456789012345678日";
     let mut run = Run::start(20, 5);
 
     run.app_writes(output);
@@ -102,7 +103,7 @@ fn farsi_wide_and_accented_characters_show_as_the_app_wrote_them() {
     let direct = without_farcli(20, 5, output);
     assert_eq!(run.terminal.screen(), direct.screen());
     assert_eq!(run.terminal.cursor(), direct.cursor());
-    assert_eq!(run.terminal.screen_text()[1], "日本語 ok");
+    assert_eq!(run.terminal.screen_text()[0], "日本語 ok");
 }
 
 #[test]

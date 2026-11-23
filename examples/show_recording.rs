@@ -1,6 +1,5 @@
-//! Developer tool: plays a recording through a session with no correction
-//! and prints what the Terminal shows, so a recording can be read without
-//! running the Target app again.
+//! Developer tool: plays a recording and prints what the Terminal shows, so
+//! a recording can be read without running the Target app again.
 //!
 //! ```text
 //! cargo run --example show_recording -- [OPTIONS] FILE
@@ -9,31 +8,35 @@
 //!                  after the app has drawn something
 //!   --scrollback   also print the rows that scrolled off the top
 //!   --numbers      show characters nobody can see as `<200c>`
+//!   --farcli       show what farcli makes of it: play the recording through
+//!                  a session with the App profile of the recorded app
 //! ```
 //!
-//! Without `--at-keys` only the screen at the end is printed.
+//! Without `--at-keys` only the screen at the end is printed. Without
+//! `--farcli` the Terminal is sent exactly what the Target app wrote.
 
 use std::env;
 use std::process::ExitCode;
 
-use farcli::app_profile::AppProfile;
 use farcli::recording::{Event, Recording, Replay};
 
 fn main() -> ExitCode {
     let mut at_keys = false;
     let mut scrollback = false;
     let mut numbers = false;
+    let mut through_farcli = false;
     let mut file = None;
     for arg in env::args().skip(1) {
         match arg.as_str() {
             "--at-keys" => at_keys = true,
             "--scrollback" => scrollback = true,
             "--numbers" => numbers = true,
+            "--farcli" => through_farcli = true,
             _ => file = Some(arg),
         }
     }
     let Some(file) = file else {
-        eprintln!("usage: show_recording [--at-keys] [--scrollback] [--numbers] FILE");
+        eprintln!("usage: show_recording [--at-keys] [--scrollback] [--numbers] [--farcli] FILE");
         return ExitCode::from(2);
     };
     let recording = match Recording::load(&file) {
@@ -76,7 +79,11 @@ fn main() -> ExitCode {
         );
     };
 
-    let mut replay = Replay::start(&recording, AppProfile::plain());
+    let mut replay = if through_farcli {
+        Replay::start(&recording, recording.profile())
+    } else {
+        Replay::without_farcli(&recording)
+    };
     let mut drawn_since_keys = false;
     for (index, (milliseconds, event)) in recording.events.iter().enumerate() {
         if at_keys && drawn_since_keys && matches!(event, Event::UserTyped(_)) {

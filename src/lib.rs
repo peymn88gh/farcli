@@ -3,14 +3,17 @@
 
 pub mod app_profile;
 pub mod app_runner;
+mod correction;
 mod emulator;
 pub mod fake_terminal;
 pub mod hidden_screen;
+pub mod layout;
 pub mod painter;
 pub mod recording;
 pub mod run;
 pub mod screen;
 pub mod session;
+pub mod setup;
 pub mod terminal;
 
 /// The size of a Terminal, or of the hidden terminal, in character cells.

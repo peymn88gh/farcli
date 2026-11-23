@@ -13,7 +13,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use farcli::app_profile::AppProfile;
 use farcli::app_runner::RunningApp;
 use farcli::fake_terminal::FakeTerminal;
 use farcli::recording::{Event, Recording, Replay};
@@ -41,9 +40,20 @@ fn farcli_records_its_session_to_the_file_it_is_told_to() {
     let mut path = OsString::from(&folder);
     path.push(";");
     path.push(env::var_os("PATH").unwrap());
+    // On a pretend machine where Setup has already run, so that farcli
+    // leaves the real settings of whoever runs the tests alone.
+    let machine = folder.join("machine");
+    fs::create_dir_all(&machine).unwrap();
+    fs::write(
+        machine.join("setup-done"),
+        "made by a test
+",
+    )
+    .unwrap();
     // This test is alone in its file, so nothing else reads these.
     env::set_var("PATH", path);
     env::set_var("FARCLI_RECORD", &file);
+    env::set_var("FARCLI_PRETEND_MACHINE", &machine);
 
     let size = Size { cols: 40, rows: 10 };
     let farcli = OsString::from(env!("CARGO_BIN_EXE_farcli"));
@@ -107,7 +117,7 @@ fn farcli_records_its_session_to_the_file_it_is_told_to() {
         .is_some_and(|version| version.contains("Windows")));
     assert_eq!(recording.note("command"), Some("claude"));
 
-    let mut replay = Replay::start(&recording, AppProfile::plain());
+    let mut replay = Replay::start(&recording, recording.profile());
     replay.finish();
     assert_eq!(replay.terminal.screen_text()[..2], ["say: hi", "heard hi"]);
     // What the app received is what the user typed, as farcli received it.

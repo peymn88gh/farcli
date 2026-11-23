@@ -57,7 +57,7 @@ size: 20x4
 cursor: 1,0
 
 0 app \\e[6nhello\\r\\n
-5 app سلام \\e[1mbold\\e[m
+5 app very \\e[1mbold\\e[m
 90 keys \\e[65;30;97;1;0;1_
 120 app \\r\\nthird
 ";
@@ -71,7 +71,7 @@ fn a_replayed_recording_shows_what_the_terminal_showed_and_gives_the_app_what_it
 
     assert_eq!(
         replay.terminal.screen_text(),
-        ["", "hello", "سلام bold", "third"]
+        ["", "hello", "very bold", "third"]
     );
     assert_eq!(replay.terminal.cursor(), Position { row: 3, col: 5 });
     assert!(replay.terminal.cell(Position { row: 2, col: 5 }).style.bold);
@@ -87,9 +87,35 @@ fn a_replay_can_stop_part_way_to_look_at_the_terminal() {
     let reached = replay.play_until(|replay| replay.app_received.ends_with(b"_"));
 
     assert!(reached);
-    assert_eq!(replay.terminal.screen_text(), ["", "hello", "سلام bold", ""]);
+    assert_eq!(
+        replay.terminal.screen_text(),
+        ["", "hello", "very bold", ""]
+    );
     assert_eq!(replay.step(), Some(Event::AppWrote(b"\r\nthird".to_vec())));
     assert_eq!(replay.step(), None);
+}
+
+#[test]
+fn a_recording_played_without_farcli_shows_what_the_app_drew() {
+    // A program farcli knows nothing about writes a Farsi line: farcli
+    // corrects it, and without farcli the Terminal shows it as written.
+    let recording = Recording::read(&HAND_WRITTEN.replace("hello", "سلام دنیا")).unwrap();
+
+    let mut alone = Replay::without_farcli(&recording);
+    alone.finish();
+    let mut through_farcli = Replay::start(&recording, recording.profile());
+    through_farcli.finish();
+
+    assert_eq!(
+        alone.terminal.screen_text(),
+        ["", "سلام دنیا", "very bold", "third"]
+    );
+    assert_eq!(alone.app_received, b"");
+    assert_ne!(through_farcli.terminal.screen_text()[1], "سلام دنیا");
+    assert_eq!(
+        through_farcli.terminal.screen_text()[2..],
+        alone.terminal.screen_text()[2..]
+    );
 }
 
 #[test]

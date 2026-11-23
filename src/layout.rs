@@ -1,0 +1,140 @@
+//! Layout: takes a paragraph in Logical order and the width it was drawn in,
+//! and returns the cells in Screen order together with a map between Logical
+//! and Screen positions.
+//!
+//! It holds no state and knows nothing about Terminals or Target apps.
+
+mod brackets;
+mod char_class;
+mod direction;
+mod joining;
+mod reorder;
+
+use crate::screen::{Cell, CellWidth, Row};
+
+use char_class::{class_of, CharClass};
+use joining::Letter;
+
+pub use direction::paragraph_direction;
+
+/// The character that ends a letter's join without leaving a gap. It takes
+/// no cell: the Hidden screen keeps it with the letter before it.
+const HALF_SPACE: char = '\u{200c}';
+
+/// Which way a paragraph, or a run of text inside it, is laid out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    LeftToRight,
+    RightToLeft,
+}
+
+/// One line of a paragraph, laid out for the screen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Line {
+    /// The whole line in Screen order: as many cells as the width it was
+    /// laid out in.
+    pub cells: Row,
+    /// For each Logical position, the column its cell is shown in.
+    screen_cols: Vec<usize>,
+}
+
+impl Line {
+    /// The column that shows the cell at the Logical position `logical`.
+    /// Positions after the end of the text are part of the map too: they
+    /// are the empty cells the text would grow into.
+    pub fn screen_col(&self, logical: usize) -> usize {
+        self.screen_cols.get(logical).copied().unwrap_or(logical)
+    }
+
+    /// The Logical position of the cell shown in column `screen`.
+    pub fn logical_col(&self, screen: usize) -> usize {
+        self.screen_cols
+            .iter()
+            .position(|col| *col == screen)
+            .unwrap_or(screen)
+    }
+}
+
+/// True when the cells hold a letter or digit of a right-to-left script.
+/// Laying out cells that hold none changes nothing.
+pub fn holds_right_to_left(cells: &[Cell]) -> bool {
+    cells.iter().any(|cell| {
+        matches!(
+            class_of(cell.character),
+            CharClass::Right | CharClass::Arabic | CharClass::ArabicDigit
+        )
+    })
+}
+
+/// Lays out one line of a paragraph whose Paragraph direction is `direction`.
+///
+/// `logical` is the line's text in Logical order, one cell per character
+/// (two for a character two cells wide), and no longer than `width`. The
+/// result is `width` cells long: a right-to-left line ends at the right
+/// edge.
+pub fn lay_out_line(logical: &[Cell], direction: Direction, width: usize) -> Line {
+    let mut cells: Vec<Cell> = logical.to_vec();
+    cells.resize(width.max(logical.len()), Cell::blank());
+
+    let letters: Vec<Letter> = cells
+        .iter()
+        .map(|cell| Letter {
+            character: cell.character,
+            half_space_after: cell.marks.contains(&HALF_SPACE),
+        })
+        .collect();
+    let joined = joining::joined(&letters);
+
+    let units = units(&cells);
+    let characters: Vec<char> = units
+        .iter()
+        .map(|unit| cells[unit.first].character)
+        .collect();
+    let levels = reorder::levels(&characters, direction);
+    let order = reorder::screen_order(&levels);
+
+    let mut screen = Vec::with_capacity(cells.len());
+    let mut screen_cols = vec![0; cells.len()];
+    for index in order {
+        let unit = &units[index];
+        let right_to_left = levels[index] % 2 == 1;
+        for position in unit.first..unit.first + unit.len {
+            screen_cols[position] = screen.len();
+            let mut cell = cells[position].clone();
+            cell.character = if right_to_left {
+                brackets::mirrored(joined[position])
+            } else {
+                joined[position]
+            };
+            // The Half-space has done its work on the join and is not sent.
+            cell.marks.retain(|mark| *mark != HALF_SPACE);
+            screen.push(cell);
+        }
+    }
+    Line {
+        cells: screen,
+        screen_cols,
+    }
+}
+
+/// The cells of one character: two for a character two cells wide, which
+/// must stay together and in order wherever it is moved.
+struct Unit {
+    /// The Logical position of the character's first cell.
+    first: usize,
+    len: usize,
+}
+
+fn units(cells: &[Cell]) -> Vec<Unit> {
+    let mut units: Vec<Unit> = Vec::with_capacity(cells.len());
+    for (position, cell) in cells.iter().enumerate() {
+        match units.last_mut() {
+            Some(unit) if cell.width == CellWidth::SecondHalf && unit.len == 1 => unit.len = 2,
+            _ => units.push(Unit {
+                first: position,
+                len: 1,
+            }),
+        }
+    }
+    units
+}

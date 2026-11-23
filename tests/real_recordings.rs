@@ -10,8 +10,6 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
 
-use farcli::app_profile::AppProfile;
-use farcli::fake_terminal::FakeTerminal;
 use farcli::recording::{Event, Recording, Replay};
 
 const REPLIES: [&str; 4] = [
@@ -67,7 +65,7 @@ fn farsi_letters(text: &str) -> usize {
 /// Every row the Terminal showed at any moment of the recording.
 fn rows_ever_shown(recording: &Recording) -> BTreeSet<String> {
     let mut rows = BTreeSet::new();
-    let mut replay = Replay::start(recording, AppProfile::plain());
+    let mut replay = Replay::without_farcli(recording);
     loop {
         rows.extend(replay.terminal.screen_text());
         if replay.step().is_none() {
@@ -130,30 +128,64 @@ fn every_recording_tells_the_app_its_version_and_the_system() {
 }
 
 #[test]
-fn every_recording_replays_to_the_screen_the_app_drew() {
+fn every_recording_replays_through_the_session_and_rows_without_farsi_stay_as_the_app_drew_them() {
     for name in all_names() {
         let recording = load(name);
-        let mut replay = Replay::start(&recording, AppProfile::plain());
-        // The same output written straight to a Terminal, with no farcli.
-        let mut direct = FakeTerminal::new(recording.about.size);
-        let cursor = recording.about.cursor;
-        direct.receive(format!("\x1b[{};{}H", cursor.row + 1, cursor.col + 1).as_bytes());
-        for (_, event) in &recording.events {
-            match event {
-                Event::AppWrote(bytes) => direct.receive(bytes),
-                Event::TerminalResized(size) => direct.resize(*size),
-                _ => {}
+        let mut through_farcli = Replay::start(&recording, recording.profile());
+        let mut alone = Replay::without_farcli(&recording);
+        let compare = |through_farcli: &Replay, alone: &Replay, event: usize| {
+            let shown = through_farcli.terminal.screen_text();
+            let drawn = alone.terminal.screen_text();
+            for (row, (shown, drawn)) in shown.iter().zip(&drawn).enumerate() {
+                if farsi_letters(drawn) == 0 {
+                    assert_eq!(shown, drawn, "{name}: row {row} before event {event}");
+                }
             }
+        };
+
+        // Compared each time the user is about to press a key, and at the end.
+        for (index, (_, event)) in recording.events.iter().enumerate() {
+            if matches!(event, Event::UserTyped(_)) {
+                compare(&through_farcli, &alone, index);
+            }
+            through_farcli.step();
+            alone.step();
         }
+        through_farcli.finish();
+        compare(&through_farcli, &alone, recording.events.len());
+        assert_eq!(
+            through_farcli.terminal.cursor(),
+            alone.terminal.cursor(),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn every_key_the_user_pressed_reaches_the_app_unchanged() {
+    for name in all_names() {
+        let recording = load(name);
+        let typed: Vec<u8> = recording
+            .events
+            .iter()
+            .filter_map(|(_, event)| match event {
+                Event::UserTyped(bytes) => Some(bytes.clone()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        let mut replay = Replay::start(&recording, recording.profile());
 
         replay.finish();
 
-        assert_eq!(
-            replay.terminal.screen_text(),
-            direct.screen_text(),
-            "{name}"
-        );
-        assert_eq!(replay.terminal.cursor(), direct.cursor(), "{name}");
+        // Besides the keys, the app receives farcli's answers to its
+        // questions about the cursor: `ESC [ row ; column R`.
+        let mut received = String::from_utf8(replay.app_received).unwrap();
+        while let Some(end) = received.find('R') {
+            let start = received[..end].rfind("\x1b[").unwrap();
+            received.replace_range(start..=end, "");
+        }
+        assert_eq!(received.as_bytes(), typed, "{name}");
     }
 }
 
@@ -261,7 +293,7 @@ const PASTED: &str = "این متن از جای دیگر آمده: نسخه\u{20
 fn every_typing_recording_shows_a_farsi_message_wrapped_over_three_rows() {
     for name in TYPING {
         let recording = load(name);
-        let mut replay = Replay::start(&recording, AppProfile::plain());
+        let mut replay = Replay::without_farcli(&recording);
         let wrapped = replay.play_until(|replay| {
             replay
                 .terminal
@@ -303,7 +335,7 @@ fn input_row(replay: &Replay, marker: char) -> Option<String> {
 #[test]
 fn claude_code_on_windows_draws_farsi_already_reordered_row_by_row() {
     let shows = |name: &str, drawn: &str| {
-        let mut replay = Replay::start(&load(name), AppProfile::plain());
+        let mut replay = Replay::without_farcli(&load(name));
         replay.play_until(|replay| {
             replay
                 .terminal
@@ -325,7 +357,7 @@ fn claude_code_on_windows_draws_farsi_already_reordered_row_by_row() {
         "دشاب )x 20 33( دیاب هرجنپ داعبا"
     ));
     // Brackets keep their shape and so face the wrong way.
-    let mut replay = Replay::start(&load(INPUT_PROBES), AppProfile::plain());
+    let mut replay = Replay::without_farcli(&load(INPUT_PROBES));
     assert!(replay.play_until(|replay| {
         input_row(replay, '❯').is_some_and(|row| row == "بوخ )ایند( مالس")
     }));
@@ -333,7 +365,7 @@ fn claude_code_on_windows_draws_farsi_already_reordered_row_by_row() {
 
 #[test]
 fn claude_code_with_the_screen_reader_display_draws_logical_order() {
-    let mut replay = Replay::start(&load(SCREEN_READER), AppProfile::plain());
+    let mut replay = Replay::without_farcli(&load(SCREEN_READER));
 
     let found = replay.play_until(|replay| {
         replay
@@ -348,7 +380,7 @@ fn claude_code_with_the_screen_reader_display_draws_logical_order() {
 
 #[test]
 fn codex_draws_farsi_in_logical_order() {
-    let mut replay = Replay::start(&load("codex-typing"), AppProfile::plain());
+    let mut replay = Replay::without_farcli(&load("codex-typing"));
 
     let found = replay.play_until(|replay| {
         input_row(replay, '›')

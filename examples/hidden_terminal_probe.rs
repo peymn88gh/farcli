@@ -64,7 +64,22 @@ const BETWEEN_KEYS: Duration = Duration::from_millis(70);
 const PASTE_LOT: usize = 4;
 const BETWEEN_PASTE_LOTS: Duration = Duration::from_millis(30);
 
+/// Keeps a probed `farcli` from running Setup on the real settings of
+/// whoever is probing: unless `FARCLI_PRETEND_MACHINE` is already set, it
+/// is pointed at a pretend machine on which Setup has already run.
+fn keep_setup_away_from_real_settings() {
+    if env::var_os("FARCLI_PRETEND_MACHINE").is_some() {
+        return;
+    }
+    let machine = env::temp_dir().join("farcli-probe-machine");
+    std::fs::create_dir_all(&machine).expect("could not make a pretend machine");
+    std::fs::write(machine.join("setup-done"), "made by the probe\n")
+        .expect("could not make a pretend machine");
+    env::set_var("FARCLI_PRETEND_MACHINE", machine);
+}
+
 fn main() -> ExitCode {
+    keep_setup_away_from_real_settings();
     let mut size = Size { cols: 80, rows: 24 };
     let mut shown = String::new();
     let mut steps = Vec::new();

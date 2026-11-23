@@ -31,7 +31,6 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::process::ExitCode;
 
-use farcli::app_profile::AppProfile;
 use farcli::recording::{Event, Recorder, Recording, Replay};
 
 struct Name {
@@ -166,7 +165,7 @@ fn left_in(recording: &Recording, names: &[Name]) -> Vec<(usize, String)> {
     let mut found = Vec::new();
     let mut saved = Vec::new();
     write(recording, &mut saved).expect("writing to memory cannot fail");
-    let mut replay = Replay::start(recording, AppProfile::plain());
+    let mut replay = Replay::without_farcli(recording);
     let mut frames: Vec<String> = Vec::new();
     loop {
         let mut frame = replay.terminal.screen_text().join("\n");
