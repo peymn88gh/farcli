@@ -2,11 +2,11 @@
 //! are written.
 //!
 //! The hidden terminal takes at most 256 bytes from its input at a time and
-//! makes sense of each lot on its own. A key code cut by the end of a lot
-//! reaches the app as an Escape key followed by the code's own characters
-//! as text. On a plain pipe the lots are cut wherever the 256th byte falls,
-//! so a paste, which is hundreds of key codes at once, arrived in pieces
-//! however it was written.
+//! makes sense of each lot on its own. The two pieces of a key code cut by
+//! the end of a lot reach the app as text, sometimes after an Escape key.
+//! On a plain pipe the lots are cut wherever the 256th byte falls, so a
+//! paste, which is hundreds of key codes at once, arrived in pieces however
+//! it was written.
 //!
 //! So the input is a pipe that keeps writes apart: the hidden terminal is
 //! handed one write at a time, never part of one and never two together.
@@ -38,8 +38,7 @@ const LARGEST_WRITE: usize = 256;
 ///
 /// Write whole key codes: what is given to one `write_all` reaches the app
 /// as the same keys, however many they are and however fast they come. A
-/// key code split over two `write_all` calls reaches the app as an Escape
-/// key and loose characters.
+/// key code split over two `write_all` calls reaches the app as text.
 pub struct AppInput {
     pipe: File,
 }
