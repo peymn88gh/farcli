@@ -59,6 +59,38 @@ fn at(row: u16, col: u16) -> Position {
     Position { row, col }
 }
 
+/// The row a Terminal `cols` wide should show for `line`, worked out by a
+/// library's implementation of the Unicode reordering rules. farcli reorders
+/// with its own code; the library is here only to check it against.
+fn by_the_unicode_rules(cols: usize, line: &str) -> String {
+    let info = unicode_bidi::BidiInfo::new(line, None);
+    let paragraph = &info.paragraphs[0];
+    let (levels, runs) = info.visual_runs(paragraph, paragraph.range.clone());
+    let mut on_screen = String::new();
+    for run in runs {
+        if levels[run.start].is_rtl() {
+            // The library leaves it to whoever draws the text to turn
+            // brackets round.
+            on_screen.extend(line[run].chars().rev().map(|character| match character {
+                '(' => ')',
+                ')' => '(',
+                '[' => ']',
+                ']' => '[',
+                '{' => '}',
+                '}' => '{',
+                other => other,
+            }));
+        } else {
+            on_screen.push_str(&line[run]);
+        }
+    }
+    if paragraph.level.is_rtl() {
+        at_right_edge(cols, &on_screen)
+    } else {
+        on_screen
+    }
+}
+
 #[test]
 fn a_farsi_word_is_shown_joined_and_right_to_left_at_the_right_edge() {
     let row = shown(20, "سلام");
@@ -111,6 +143,41 @@ fn brackets_around_english_in_a_farsi_sentence_stay_a_pair() {
 
     let on_screen = ["world (hello) ", from_the_right("ﺳﻠﺎﻡ").as_str()].concat();
     assert_eq!(row, at_right_edge(30, &on_screen));
+}
+
+#[test]
+fn any_mix_of_letters_numbers_and_punctuation_is_ordered_as_the_unicode_rules_say() {
+    // Right-to-left letters that have no joined forms, so that only the
+    // order can differ: two Urdu letters and two Hebrew ones. The digits
+    // are English and Arabic.
+    const CHARACTERS: &[char] = &[
+        'a', 'b', 'c', 'ٹ', 'ڈ', 'א', 'ב', '1', '2', '٣', ' ', ' ', ' ', '.', ',', ':', '/', '-',
+        '+', '%', '$', '!', '?', '"', '(', ')', '[', ']', '{', '}',
+    ];
+    let mut state: u64 = 0x2545_f491_4f6c_dd1d;
+    let mut pick = |from: usize| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state % from as u64) as usize
+    };
+
+    for _ in 0..5000 {
+        let len = 1 + pick(24);
+        let line: String = (0..len)
+            .map(|_| CHARACTERS[pick(CHARACTERS.len())])
+            .collect();
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        assert_eq!(
+            shown(40, line).trim_end(),
+            by_the_unicode_rules(40, line).trim_end(),
+            "for the line {line:?}"
+        );
+    }
 }
 
 #[test]

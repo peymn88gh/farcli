@@ -55,13 +55,13 @@ impl Line {
     }
 }
 
-/// True when the cells hold a letter of a right-to-left script, so that
-/// laying them out would change them.
+/// True when the cells hold a letter or digit of a right-to-left script.
+/// Laying out cells that hold none changes nothing.
 pub fn holds_right_to_left(cells: &[Cell]) -> bool {
     cells.iter().any(|cell| {
         matches!(
             class_of(cell.character),
-            CharClass::Right | CharClass::Arabic
+            CharClass::Right | CharClass::Arabic | CharClass::ArabicDigit
         )
     })
 }
