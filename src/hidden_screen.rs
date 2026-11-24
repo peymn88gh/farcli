@@ -139,6 +139,12 @@ impl HiddenScreen {
         self.emulator.rows()
     }
 
+    /// True while the app draws on the alternate screen, which full-screen
+    /// programs use and leave again.
+    pub fn on_alternate_screen(&self) -> bool {
+        self.emulator.on_alternate_screen()
+    }
+
     /// Where the app's cursor is.
     pub fn cursor(&self) -> Position {
         self.emulator.cursor()

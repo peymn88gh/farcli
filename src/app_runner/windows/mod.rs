@@ -8,6 +8,7 @@
 mod app_input;
 mod command_line;
 mod shipped;
+mod version;
 
 use std::ffi::{c_void, OsStr, OsString};
 use std::fs::File;
@@ -37,6 +38,7 @@ use crate::Size;
 
 pub use app_input::AppInput;
 pub use shipped::ShippedFiles;
+pub use version::version_said;
 
 /// The three calls that make, resize and close a hidden terminal. Both
 /// hidden terminals offer them with the same shape.

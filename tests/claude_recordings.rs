@@ -26,13 +26,6 @@ const FULLSCREEN: &str = "claude-fullscreen-reply";
 /// session's message and reply again and nothing is sent.
 const DRAWN_AGAIN: &str = "claude-classic-resumed-reply";
 
-/// Sessions in which Farsi is typed into the Input box and nothing is sent.
-const TYPING: [&str; 3] = [
-    "claude-classic-typing",
-    "claude-fullscreen-typing",
-    "claude-classic-input-probes",
-];
-
 /// The width of the area a reply's text is drawn in.
 const WIDTH: usize = 98;
 
@@ -156,10 +149,24 @@ fn styles(row: &[Cell]) -> Vec<String> {
     styles
 }
 
+/// The rows that hold the message being typed in the Input box: those
+/// between the last two borders drawn across the screen, when the first of
+/// them starts with the prompt mark.
+fn message_being_typed(drawn: &[Row]) -> std::ops::Range<usize> {
+    let borders: Vec<usize> = (0..drawn.len())
+        .filter(|row| row_text(&drawn[*row]).starts_with("────"))
+        .collect();
+    match borders[..] {
+        [.., upper, lower] if row_text(&drawn[upper + 1]).starts_with('❯') => upper + 1..lower,
+        _ => 0..0,
+    }
+}
+
 /// Checks every moment of a recording: each row of the reply's prose reads
 /// as wanted and keeps the styles its characters had, and every other row
-/// is exactly as drawn, in every cell. Returns how often each prose row was
-/// seen.
+/// is exactly as drawn, in every cell. The message being typed in the
+/// Input box is left out here: `tests/claude_input_box.rs` holds what it
+/// should look like. Returns how often each prose row was seen.
 fn check_recording(name: &str) -> Vec<usize> {
     let prose = prose_rows(name);
     let wanted: HashMap<&str, usize> = prose
@@ -169,9 +176,15 @@ fn check_recording(name: &str) -> Vec<usize> {
         .collect();
     let mut times_seen = vec![0; prose.len()];
     for moment in moments(name) {
+        let being_typed = message_being_typed(&moment.drawn);
         for (row, (shown, drawn)) in moment.shown.iter().zip(&moment.drawn).enumerate() {
             let what = format!("{name}, {}, row {row}", moment.when);
             let drawn_text = row_text(drawn);
+            if being_typed.contains(&row) {
+                // Only the message's own columns may differ.
+                assert!(shown[..2] == drawn[..2], "{what}");
+                continue;
+            }
             if let Some(at) = wanted.get(drawn_text.as_str()) {
                 assert_eq!(row_text(shown), prose[*at].wanted, "{what}");
                 assert_eq!(styles(shown), styles(drawn), "{what}");
@@ -467,36 +480,4 @@ fn bold_stays_on_the_characters_it_was_given_to() {
         assert_eq!((row[98].character, row[99].character), ('.', '۱'));
     }
     assert_ne!(row_text(&shown), row_text(&drawn));
-}
-
-#[test]
-fn while_farsi_is_typed_into_the_input_box_the_whole_screen_stays_as_claude_code_drew_it() {
-    // The Input box is the app's own until the ticket that makes typing in
-    // it right. Nothing in these sessions is Agent output, so farcli has
-    // nothing to change: every cell and the cursor are as the app left
-    // them, each time the user is about to press a key.
-    for name in TYPING {
-        let recording = load(name);
-        let mut through_farcli = Replay::start(&recording, recording.profile());
-        let mut alone = Replay::without_farcli(&recording);
-        let mut keys = 0;
-        for (index, (_, event)) in recording.events.iter().enumerate() {
-            if matches!(event, Event::UserTyped(_)) {
-                keys += 1;
-                assert_eq!(
-                    through_farcli.terminal.screen(),
-                    alone.terminal.screen(),
-                    "{name}: before event {index}"
-                );
-                assert_eq!(
-                    through_farcli.terminal.cursor(),
-                    alone.terminal.cursor(),
-                    "{name}: before event {index}"
-                );
-            }
-            through_farcli.step();
-            alone.step();
-        }
-        assert!(keys > 50, "{name}");
-    }
 }

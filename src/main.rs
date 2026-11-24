@@ -15,6 +15,7 @@ Usage:
 
 Everything after the app's name is passed to the app unchanged.
 Setup runs by itself the first time farcli is used.
+While an app runs, F12 switches the correction off and on.
 ";
 
 fn main() -> ExitCode {

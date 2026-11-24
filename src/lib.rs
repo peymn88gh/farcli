@@ -8,6 +8,8 @@ mod emulator;
 pub mod fake_terminal;
 pub mod hidden_screen;
 pub mod hidden_terminal;
+mod hotkey;
+mod input_box;
 pub mod layout;
 pub mod painter;
 pub mod recording;
