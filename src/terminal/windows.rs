@@ -5,7 +5,7 @@ use std::io;
 use std::mem;
 use std::ptr;
 
-use windows_sys::Win32::Foundation::{BOOL, HANDLE, INVALID_HANDLE_VALUE};
+use windows_sys::Win32::Foundation::{BOOL, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0};
 use windows_sys::Win32::System::Console::{
     GetConsoleMode, GetConsoleScreenBufferInfo, GetStdHandle, ReadConsoleInputW,
     SetConsoleCtrlHandler, SetConsoleMode, WriteConsoleW, CONSOLE_MODE, CONSOLE_SCREEN_BUFFER_INFO,
@@ -14,6 +14,7 @@ use windows_sys::Win32::System::Console::{
     FOCUS_EVENT, INPUT_RECORD, KEY_EVENT, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
     WINDOW_BUFFER_SIZE_EVENT,
 };
+use windows_sys::Win32::System::Threading::{WaitForSingleObject, INFINITE};
 
 use crate::screen::Position;
 use crate::Size;
@@ -186,6 +187,17 @@ impl Terminal {
         unsafe {
             let mut records: [INPUT_RECORD; 256] = mem::zeroed();
             loop {
+                // Wait for input to be there before asking for it, so that
+                // the call that reads never has to wait. The console host
+                // built into Windows can take input at the moment a reader,
+                // having found none, goes to wait inside that call, and
+                // then leave the reader waiting until something else
+                // arrives: the last key of a burst would stay unseen until
+                // the next key. The handle itself says truly whether input
+                // is waiting.
+                if WaitForSingleObject(self.input, INFINITE) != WAIT_OBJECT_0 {
+                    return Err(io::Error::last_os_error());
+                }
                 let mut count = 0u32;
                 if ReadConsoleInputW(self.input, records.as_mut_ptr(), 256, &mut count) == 0 {
                     return Err(io::Error::last_os_error());
