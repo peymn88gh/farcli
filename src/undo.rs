@@ -276,18 +276,7 @@ fn reading(characters: &[char], drawn: Direction) -> Option<Vec<usize>> {
     // A row drawn left to right has an English letter as its leftmost
     // letter, or no letter at all. A row drawn right to left has a Farsi
     // letter as its rightmost. This settles most rows before any search.
-    let is_letter = |c: &&char| matches!(layout::bearing(**c), Bearing::Left | Bearing::Right);
-    let possible = match drawn {
-        Direction::LeftToRight => characters
-            .iter()
-            .find(is_letter)
-            .is_none_or(|c| layout::bearing(*c) == Bearing::Left),
-        Direction::RightToLeft => characters
-            .iter()
-            .rfind(is_letter)
-            .is_some_and(|c| layout::bearing(*c) == Bearing::Right),
-    };
-    if !possible {
+    if !may_be_drawn(characters, drawn) {
         return None;
     }
     let pieces = pieces(characters);
@@ -331,6 +320,89 @@ fn reading(characters: &[char], drawn: Direction) -> Option<Vec<usize>> {
         }
     }
     least_odd.map(|(_, order)| order)
+}
+
+/// How many ways of reading a row's numbers and brackets `only_order`
+/// goes through. A row with more is not one it can be sure of.
+const MOST_WAYS_SETTLED: usize = 1024;
+
+/// The Logical order of a screen row's characters, as positions in the row,
+/// when the screen settles it: when one order, and no other, is drawn as
+/// this row. `None` for a row with any of the three doubts, and for a row
+/// no order gives.
+///
+/// This is for text nobody may guess at: what the user is typing in the
+/// Input box, where a wrong order puts the cursor on the wrong letter.
+pub(crate) fn only_order(characters: &[char]) -> Option<Vec<usize>> {
+    let pieces = pieces(characters);
+    let doubts: Vec<usize> = (0..pieces.len())
+        .filter(|at| matches!(pieces[*at].0, Piece::Digits | Piece::Bracket))
+        .collect();
+    // Every way of reading every number and bracket: a number with the text
+    // on one side of it or the other, a bracket also as taking its
+    // direction from its neighbours.
+    let ways = |piece: usize| -> &'static [Side] {
+        match pieces[piece].0 {
+            Piece::Bracket => &[Side::Neutral, Side::Left, Side::Right],
+            _ => &[Side::Left, Side::Right],
+        }
+    };
+    let mut all_ways = 1usize;
+    for piece in &doubts {
+        all_ways = all_ways.saturating_mul(ways(*piece).len());
+    }
+    if all_ways > MOST_WAYS_SETTLED {
+        return None;
+    }
+    let mut found: Option<Vec<usize>> = None;
+    for drawn in [Direction::LeftToRight, Direction::RightToLeft] {
+        if !may_be_drawn(characters, drawn) {
+            continue;
+        }
+        let mut chosen = vec![0; doubts.len()];
+        loop {
+            let told: Vec<(usize, Side)> = doubts
+                .iter()
+                .zip(&chosen)
+                .map(|(piece, way)| (*piece, ways(*piece)[*way]))
+                .collect();
+            let order = logical_order(&levels(&pieces, drawn, &told));
+            if checks_out(characters, &order, drawn) {
+                match &found {
+                    Some(other) if *other != order => return None,
+                    _ => found = Some(order),
+                }
+            }
+            // The next way of reading the doubts, counting up.
+            let mut at = 0;
+            while at < doubts.len() && chosen[at] + 1 == ways(doubts[at]).len() {
+                chosen[at] = 0;
+                at += 1;
+            }
+            match chosen.get_mut(at) {
+                Some(way) => *way += 1,
+                None => break,
+            }
+        }
+    }
+    found
+}
+
+/// A row drawn left to right has an English letter as its leftmost letter,
+/// or no letter at all. A row drawn right to left has a Farsi letter as its
+/// rightmost.
+fn may_be_drawn(characters: &[char], drawn: Direction) -> bool {
+    let is_letter = |c: &&char| matches!(layout::bearing(**c), Bearing::Left | Bearing::Right);
+    match drawn {
+        Direction::LeftToRight => characters
+            .iter()
+            .find(is_letter)
+            .is_none_or(|c| layout::bearing(*c) == Bearing::Left),
+        Direction::RightToLeft => characters
+            .iter()
+            .rfind(is_letter)
+            .is_some_and(|c| layout::bearing(*c) == Bearing::Right),
+    }
 }
 
 /// How far the brackets of a text are from the way brackets are written:

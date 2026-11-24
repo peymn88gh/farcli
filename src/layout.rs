@@ -90,6 +90,12 @@ pub(crate) fn bearing(character: char) -> Bearing {
     }
 }
 
+/// True for a character that takes no cell of its own and is drawn with the
+/// character before it: a Half-space, or an accent or vowel mark.
+pub(crate) fn takes_no_cell(character: char) -> bool {
+    matches!(character, HALF_SPACE | '\u{200d}') || class_of(character) == CharClass::Mark
+}
+
 /// The Logical positions of a line's characters in the order they sit on
 /// screen from the left, by the same reordering rules Layout follows, for a
 /// line whose direction is `direction`.

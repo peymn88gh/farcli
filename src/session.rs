@@ -122,6 +122,7 @@ impl Session {
     fn forward(&mut self, inputs: &[Input]) -> Reaction {
         let mut reaction = Reaction::default();
         for input in inputs {
+            self.correction.user_typed(input);
             input.write_for_app(self.characters_as_keys, &mut reaction.for_app);
         }
         reaction
