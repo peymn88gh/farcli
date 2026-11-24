@@ -31,6 +31,7 @@ pub fn run(profile: AppProfile, program: &OsStr, args: &[OsString]) -> io::Resul
 mod in_terminal {
     use std::ffi::{OsStr, OsString};
     use std::io::{self, Read, Write};
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc::{self, RecvTimeoutError};
     use std::sync::Arc;
     use std::thread;
@@ -52,7 +53,8 @@ mod in_terminal {
     /// Target app while the rest of it has not come. The rest of a code
     /// that Windows cut in two is already waiting to be read; only an
     /// Escape key from a Terminal that sends keys in no other form waits
-    /// this long.
+    /// this long. While the Terminal has input that has not got here yet,
+    /// nothing is let go, however long it takes.
     const HELD_INPUT_LIMIT: Duration = Duration::from_millis(100);
 
     /// How long after the last of what the Terminal sent was forwarded the
@@ -149,10 +151,18 @@ mod in_terminal {
                 let _ = events.send(Event::AppEnded(app.wait()));
             });
         }
-        thread::spawn(move || {
-            let _ = terminal.watch(|event| events.send(Event::Terminal(event)).is_ok());
-            let _ = events.send(Event::TerminalGone);
-        });
+        // True while something the Terminal sent is on its way from the
+        // thread below to the loop further down.
+        let input_being_read = Arc::new(AtomicBool::new(false));
+        {
+            let being_read = Arc::clone(&input_being_read);
+            thread::spawn(move || {
+                let _ = terminal.watch(&being_read, |event| {
+                    events.send(Event::Terminal(event)).is_ok()
+                });
+                let _ = events.send(Event::TerminalGone);
+            });
+        }
 
         let mut exit_status = None;
         let mut output_ended = false;
@@ -190,27 +200,43 @@ mod in_terminal {
                 Some((wait, due)) => match happened.recv_timeout(wait) {
                     Ok(event) => event,
                     Err(RecvTimeoutError::Disconnected) => break,
-                    Err(RecvTimeoutError::Timeout) => {
-                        match due {
-                            Due::HeldInput => {
+                    Err(RecvTimeoutError::Timeout) => match due {
+                        // The rest of a code that Windows cut in two was
+                        // sent together with its start. On a busy machine
+                        // it can still take longer than the limit to get
+                        // here, and what is held must not be let go
+                        // meanwhile: the two pieces would reach the app as
+                        // text. Asked in this order, one of the three
+                        // finds whatever the Terminal had sent by now.
+                        Due::HeldInput
+                            if terminal.input_is_waiting()
+                                || input_being_read.load(Ordering::SeqCst) =>
+                        {
+                            continue
+                        }
+                        Due::HeldInput => match happened.try_recv() {
+                            Ok(event) => event,
+                            Err(_) => {
                                 tape.add(|| Recorded::HeldInputReleased);
                                 let released = session.release_held_input();
                                 wake_at = wake_time(&session, &released, wake_at);
                                 react(released)?;
+                                continue;
                             }
-                            // A wake gives the session nothing to replay,
-                            // so a recording does not hold it.
-                            Due::Wake => {
-                                wake_at = None;
-                                react(session.wake_app())?;
-                            }
-                            Due::HeldFrame => {
-                                tape.add(|| Recorded::HeldFrameReleased);
-                                react(session.release_held_frame())?;
-                            }
+                        },
+                        // A wake gives the session nothing to replay, so a
+                        // recording does not hold it.
+                        Due::Wake => {
+                            wake_at = None;
+                            react(session.wake_app())?;
+                            continue;
                         }
-                        continue;
-                    }
+                        Due::HeldFrame => {
+                            tape.add(|| Recorded::HeldFrameReleased);
+                            react(session.release_held_frame())?;
+                            continue;
+                        }
+                    },
                 },
             };
             match event {
