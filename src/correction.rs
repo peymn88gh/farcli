@@ -12,8 +12,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use crate::app_profile::{AppProfile, Screen};
 use crate::layout::{self, Direction, Line};
 use crate::painter::Frame;
-use crate::regions::claude_code::Finder;
-use crate::regions::{Kind, ParagraphStart, Region};
+use crate::regions::{Finder, Kind, ParagraphStart, Region};
 use crate::screen::{Cell, Color, EraseScreen, Row, ScreenChange};
 use crate::undo::{self, DrawnRow, Start};
 
@@ -56,8 +55,8 @@ const MOST_ROWS_SEEN: usize = 20_000;
 impl Correction {
     pub fn new(profile: AppProfile) -> Correction {
         Correction {
+            finder: Finder::for_screen(profile.screen()),
             profile,
-            finder: Finder::new(),
             on_alternate_screen: false,
             draws_in_colour: false,
             direction_above: None,
@@ -69,8 +68,7 @@ impl Correction {
     pub fn correct(&mut self, frame: &mut Frame) {
         match self.profile.screen() {
             Screen::EveryRowAParagraph => every_row_a_paragraph(frame),
-            Screen::ClaudeCode => self.agent_output(frame),
-            Screen::NotKnown => {}
+            Screen::ClaudeCode | Screen::Codex => self.agent_output(frame),
         }
     }
 
@@ -127,7 +125,9 @@ impl Correction {
                         || cell.style.background != Color::Default)
             });
         let regions = if self.on_alternate_screen {
-            Finder::knowing_nothing_above().find(rows, 0, self.draws_in_colour)
+            self.finder
+                .knowing_nothing_above()
+                .find(rows, 0, self.draws_in_colour)
         } else {
             self.finder.find(rows, leaving, self.draws_in_colour)
         };
@@ -195,12 +195,13 @@ impl Correction {
             },
             ParagraphStart::Above => Start::Above(self.direction_above),
         };
-        // The only screen with regions so far is Claude Code's, and Claude
-        // Code reorders Farsi itself. The rows of an app that draws Logical
-        // order are the paragraph's lines as they are, with nothing to
-        // undo: this is where such an app parts ways.
-        debug_assert!(self.profile.reorders_farsi_itself());
-        let paragraph = undo::paragraph(&drawn, width, start);
+        // The rows of an app that draws Logical order are the paragraph's
+        // lines as they are, with nothing to undo.
+        let paragraph = if self.profile.reorders_farsi_itself() {
+            undo::paragraph(&drawn, width, start)
+        } else {
+            in_logical_order(&drawn, start)
+        };
 
         if self.on_alternate_screen && start == Start::Here {
             for row in &drawn {
@@ -248,6 +249,32 @@ fn drawn_cells(cells: &[Cell]) -> Vec<Cell> {
             false => cell.clone(),
         })
         .collect()
+}
+
+/// A paragraph that the app drew in Logical order: its rows are its lines
+/// as they are, and its direction is that of its first letter.
+fn in_logical_order(rows: &[DrawnRow], start: Start) -> undo::Paragraph {
+    let begins_in_farsi =
+        |row: &&DrawnRow| layout::paragraph_direction(&row.cells) == Direction::RightToLeft;
+    let direction = match start {
+        Start::Above(Some(direction)) => direction,
+        // With its first rows out of sight, a paragraph in which a row
+        // begins with a Farsi word is far more often a Farsi paragraph
+        // than an English one with Farsi in it.
+        Start::Above(None) if rows.iter().any(|row| begins_in_farsi(&row)) => {
+            Direction::RightToLeft
+        }
+        // A row that holds no letter, such as a number before the text,
+        // leaves the direction to the row after it.
+        _ => {
+            let text: Vec<Cell> = rows.iter().flat_map(|row| row.cells.clone()).collect();
+            layout::paragraph_direction(&text)
+        }
+    };
+    undo::Paragraph {
+        direction,
+        rows: rows.iter().map(|row| Some(row.cells.clone())).collect(),
+    }
 }
 
 /// What a drawn row is remembered by.

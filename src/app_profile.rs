@@ -25,9 +25,8 @@ pub(crate) enum Screen {
     EveryRowAParagraph,
     /// Claude Code's screen: see `regions::claude_code`.
     ClaudeCode,
-    /// A screen with an interface around its text that farcli cannot tell
-    /// apart yet. It is shown as drawn.
-    NotKnown,
+    /// Codex's screen: see `regions::codex`.
+    Codex,
 }
 
 impl AppProfile {
@@ -59,9 +58,7 @@ impl AppProfile {
     pub(crate) fn screen(&self) -> Screen {
         match self.app {
             App::ClaudeCode => Screen::ClaudeCode,
-            // Shown exactly as drawn until farcli can tell Codex's text
-            // from its interface.
-            App::Codex => Screen::NotKnown,
+            App::Codex => Screen::Codex,
             App::Plain => Screen::EveryRowAParagraph,
         }
     }
