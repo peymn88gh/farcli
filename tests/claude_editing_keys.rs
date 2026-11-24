@@ -1311,3 +1311,31 @@ fn a_key_that_deletes_the_rest_of_the_line_takes_the_spaces_at_its_end_too() {
     assert_eq!(app.cursor(), at(0, end.col + 1));
     assert_eq!(app.character_under_the_cursor(), 'w');
 }
+
+#[test]
+fn a_space_left_alone_in_the_box_is_still_there_when_text_is_pasted_before_it() {
+    let mut app = ClaudeCode::start(40, 10);
+    app.types("(abc) ");
+    app.presses(Key::Left);
+    // The word goes and a space is all the box holds, with the cursor
+    // before it. The box looks empty, but shows no hint.
+    app.presses(Key::DeleteWord);
+    assert_eq!(app.shown(), [MARK.to_string()]);
+    assert!(!app.holds_nothing());
+
+    app.presses(Key::Paste("دو word".to_string()));
+
+    // The space is after what was pasted, where nobody can see it: the
+    // cursor is on its cell, and left of that is the end of the message.
+    assert_eq!(app.shown(), right_to_left(&["دو word"], 40));
+    assert_eq!(app.cursor(), at(0, left_of(7, 40)));
+
+    app.presses(Key::Left);
+    assert_eq!(app.cursor(), at(0, left_of(8, 40)));
+
+    app.presses(Key::Right);
+    assert_eq!(app.cursor(), at(0, left_of(7, 40)));
+
+    app.presses(Key::Right);
+    assert_eq!(app.character_under_the_cursor(), 'w');
+}

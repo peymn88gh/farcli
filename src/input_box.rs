@@ -26,6 +26,12 @@
 //! are on their way to it. So the keys the screen has not borne out yet are
 //! kept apart from the message it has, and each frame is matched against
 //! the message as it was after each of them.
+//!
+//! The message believed also says what an arrow key means. The user means
+//! a side of the screen, and the app moves its cursor in Logical order. So
+//! while the box is shown as a text field, the app is sent the arrow keys
+//! that take its cursor to the cell beside the one it is on
+//! (`editing_keys`). Every other key is forwarded as it came.
 
 mod editing_keys;
 
@@ -525,8 +531,12 @@ impl InputBox {
                 cursor_is_a_guess: false,
             });
         }
+        // The hint is no part of the message: such a box is one empty row.
+        // A box that only looks empty may hold spaces and line breaks, and
+        // is read like any other: its cursor says how many spaces are
+        // before it.
         let empty = [];
-        let screen: Vec<Drawn> = if place.is_empty {
+        let screen: Vec<Drawn> = if shows_the_apps_hint {
             vec![Drawn::of(&empty)]
         } else {
             place
@@ -535,7 +545,7 @@ impl InputBox {
                 .map(|row| Drawn::of(&row[place.cols.clone()]))
                 .collect()
         };
-        let cursor = place.cursor.filter(|_| !place.is_empty);
+        let cursor = place.cursor.filter(|_| !shows_the_apps_hint);
         let reading = self.read(&screen, cursor, place.wrap_width)?;
         let message = self.known.as_ref()?;
         let directions = directions(&message.units, &reading, &screen, place.wrap_width);

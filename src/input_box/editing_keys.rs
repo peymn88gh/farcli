@@ -64,8 +64,8 @@ impl Side {
 
 /// The place the cursor goes to from the place `from` when it moves one
 /// place towards `side` on screen. A place is a row and one of the row's
-/// `characters`. `None` when there is no place on that side: at the start
-/// or the end of the message.
+/// `characters`. `None` when there is no place on that side: at the edge of
+/// the first row or of the last.
 ///
 /// On a row the cursor goes to the place shown beside it, whatever the
 /// directions of the runs it passes. Past the end of a row it goes on to
