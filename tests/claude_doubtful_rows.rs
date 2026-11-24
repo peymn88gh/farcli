@@ -299,3 +299,53 @@ fn a_path_and_a_dotted_name_inside_a_farsi_row_are_shown_in_one_piece() {
         assert_eq!(shown[0], at_right_edge(38, &on_screen), "{written}");
     }
 }
+
+#[test]
+fn a_sign_beside_a_number_is_read_on_the_side_of_the_number_people_write_it_on() {
+    // A percent sign is part of its number when the number follows an
+    // English word, and stands by itself when the number follows a Farsi
+    // one. So Claude Code draws each of these pairs alike. farcli takes
+    // the reading with the percent sign after its number and the dollar
+    // sign before it.
+    for (written, drawn_the_same, the_doubt_shows) in [
+        ("رشد Python 50% بود", "رشد %Python 50 بود", true),
+        ("قیمت $5 abc است", "قیمت $abc 5 است", true),
+        // Layout puts these two in the same places as well.
+        ("رشد 50% Python بود", "رشد Python %50 بود", false),
+    ] {
+        assert_eq!(as_drawn(written), as_drawn(drawn_the_same));
+
+        let shown = shown(written, 40);
+
+        assert_eq!(shown[0], laid_out(written, RightToLeft, 38), "{written}");
+        assert_eq!(
+            shown[0] != laid_out(drawn_the_same, RightToLeft, 38),
+            the_doubt_shows,
+            "{written}"
+        );
+    }
+}
+
+#[test]
+fn a_row_with_many_numbers_that_hold_a_colon_a_point_or_a_dash_is_read() {
+    // A colon, point or slash between two digits is always part of the
+    // number. A dash between two digits is part of it when the number
+    // begins the row or follows an English word: after a Farsi word the
+    // app draws the two halves the other way round.
+    for (written, drawn) in [
+        (
+            "از 12:30 تا 14:45 و 3.14 و 1/2",
+            "1/2 و 3.14 و 14:45 ات 12:30 زا",
+        ),
+        (
+            "2026-11-23 تا 2026-12-01 است",
+            "تسا 01-12-2026 ات 2026-11-23",
+        ),
+    ] {
+        assert_eq!(as_drawn(written), drawn);
+
+        let shown = shown(written, 40);
+
+        assert_eq!(shown[0], laid_out(written, RightToLeft, 38), "{written}");
+    }
+}

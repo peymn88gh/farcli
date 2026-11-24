@@ -214,6 +214,115 @@ fn any_row_whose_order_the_screen_settles_is_laid_out_from_the_text_that_was_wri
     );
 }
 
+#[test]
+fn any_row_with_numbers_and_the_signs_beside_them_is_laid_out_from_the_text_that_was_written() {
+    // Rows of English and Farsi words and of numbers with a sign beside or
+    // inside them: a percentage, a price, a date, a time, a fraction. A
+    // sign such as % is part of its number when the number follows an
+    // English word or begins the row, and stands by itself when the number
+    // follows a Farsi word; Claude Code draws the two differently.
+    //
+    // Left out, because the screen does not settle them (see
+    // `claude_doubtful_rows.rs`): rows with an English letter at the left
+    // end and a Farsi one at the right, and a number right beside an
+    // English word, which is drawn the same whichever of the two was
+    // written first. A percentage or a price beside an English word is
+    // kept: the two orders are drawn alike there too, but in one of them
+    // the sign is on the wrong side of its number, and farcli takes the
+    // other.
+    const WORDS: &[&str] = &[
+        "abc",
+        "Python",
+        "سلام",
+        "رشد",
+        "می\u{200c}شود",
+        "و",
+        "50%",
+        "10%",
+        "$5",
+        "2026-11-23",
+        "3.14",
+        "12:30",
+        "1/2",
+        "5-3",
+        "۱۰٪",
+        "42",
+        "(50%)",
+    ];
+    const MARKS: &[&str] = &["", "", "", "", ".", "،"];
+    let is_english = |c: char| c.is_ascii_alphabetic();
+    let is_farsi = |c: char| ('\u{600}'..='\u{6ff}').contains(&c) && c.is_alphabetic();
+    let is_a_bare_number =
+        |word: &str| !word.contains(char::is_alphabetic) && !word.contains(['%', '٪', '$']);
+    let is_an_english_word = |word: &str| word.chars().any(|c| c.is_ascii_alphabetic());
+    // The signs farcli reads both ways, as part of a number and not. A row
+    // with more than five of them is not searched through.
+    let signs = |line: &str| line.matches(['%', '٪', '$', '-']).count();
+    let mut state: u64 = 0x2545_f491_4f6c_dd1d;
+    let mut pick = |from: usize| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state % from as u64) as usize
+    };
+
+    let mut checked = 0;
+    let mut wrong: Vec<String> = Vec::new();
+    for _ in 0..8000 {
+        let words: Vec<&str> = (0..2 + pick(5)).map(|_| WORDS[pick(WORDS.len())]).collect();
+        let doubtful = words.windows(2).any(|two| {
+            (is_a_bare_number(two[0]) && is_an_english_word(two[1]))
+                || (is_an_english_word(two[0]) && is_a_bare_number(two[1]))
+        });
+        if doubtful {
+            continue;
+        }
+        let line = format!("{}{}", words.join(" "), MARKS[pick(MARKS.len())]);
+        let line = line.as_str();
+        if claude_code::cells(line) > 28 {
+            continue;
+        }
+        let drawn = as_drawn(line);
+        let letters: Vec<char> = drawn
+            .chars()
+            .filter(|c| is_english(*c) || is_farsi(*c))
+            .collect();
+        let (Some(leftmost), Some(rightmost)) = (letters.first(), letters.last()) else {
+            continue;
+        };
+        if !letters.iter().any(|c| is_farsi(*c)) || (is_english(*leftmost) && is_farsi(*rightmost))
+        {
+            continue;
+        }
+        let mut run = Run::start(30, 3);
+
+        run.app_writes(reply(&[&[line]]));
+
+        let direction = claude_code::direction_of(line);
+        let wanted = format!("● {}", laid_out(line, direction, 28));
+        let shown = run.row(0);
+        if signs(line) > 5 {
+            // Read rightly, or not read at all and left as drawn.
+            assert!(
+                shown.trim_end() == wanted.trim_end() || run.row_is_as_drawn(0),
+                "{line:?} drawn as {drawn:?} shown as {shown:?}"
+            );
+            continue;
+        }
+        if shown.trim_end() != wanted.trim_end() {
+            wrong.push(format!("{line:?} drawn as {drawn:?} shown as {shown:?}"));
+        }
+        checked += 1;
+    }
+    assert!(checked > 2000, "{checked}");
+    assert!(
+        wrong.is_empty(),
+        "{} of {checked} wrong: {:#?}",
+        wrong.len(),
+        &wrong[..wrong.len().min(12)]
+    );
+}
+
 /// The row a reply's one-row paragraph «این یک متن است» is shown on, in a
 /// Terminal 40 columns wide.
 fn the_paragraph_row() -> String {

@@ -22,13 +22,16 @@
 //! For those rows the step guesses the likelier reading from the paragraph
 //! the row is in. Every rule of the guess is in this file: `drawn_direction`
 //! for the first doubt, and for the other two the order in which `reading`
-//! tries its answers and `oddness_of_brackets`.
+//! tries its answers, `begins_a_size`, `oddness_of_numbers` and
+//! `oddness_of_brackets`. For numbers the guess is the reading in which
+//! they stand as people write them: «33 x 20» and not «x 20 33», «50%» and
+//! not «%50».
 //!
-//! The doubts only show when a row was drawn against its paragraph's
+//! The first doubt only shows when a row was drawn against its paragraph's
 //! direction, as a wrapped row that begins with an English word is in a
-//! Farsi paragraph. A row drawn the way its paragraph runs is laid out
-//! with every character where the app had it, whichever reading is taken,
-//! because Layout follows the same reordering rules.
+//! Farsi paragraph. The second shows wherever Layout has a rule of its own
+//! for the number: it shows a size in the order it was written, so it
+//! matters which order that was.
 
 use crate::layout::{self, Bearing, Direction, NumberMark};
 use crate::screen::{Cell, CellWidth};
@@ -299,6 +302,11 @@ enum Side {
 /// more keeps the likeliest reading of the rest.
 const MOST_DOUBTS: usize = 10;
 
+/// How many of the signs beside a row's numbers are tried both ways, each
+/// with every other. A row with more has them all read one way, then all
+/// the other.
+const MOST_SIGNS: usize = 5;
+
 /// The Logical order of a screen row's characters, as positions in the
 /// row, if the app drew the row with the direction `drawn`. When more than
 /// one order gives the same screen row (the second doubt) this is the
@@ -312,44 +320,71 @@ fn reading(characters: &[char], drawn: Direction) -> Option<Vec<usize>> {
     if !may_be_drawn(characters, drawn) {
         return None;
     }
-    let pieces = pieces(characters);
-    let doubts: Vec<usize> = (0..pieces.len())
-        .filter(|at| matches!(pieces[*at].0, Piece::Digits | Piece::Bracket))
-        .take(MOST_DOUBTS)
-        .collect();
+    // A sign between two digits, or a sign such as % beside a number, is
+    // part of the number or stands by itself: that depends on the letter
+    // before the number in Logical order, which is what is being asked. So
+    // the row is read both ways for each of them. As part of its number
+    // comes first: `Python 50%` in a row drawn right to left is what the
+    // app draws for «Python 50%» and for «%Python 50», and the first is
+    // what people write.
+    let (always_in_a_number, may_be_in_a_number) = number_marks(characters);
+    let signs = may_be_in_a_number.len();
+    let every_way: Vec<Vec<bool>> = match signs {
+        0 => vec![Vec::new()],
+        1..=MOST_SIGNS => (0..1usize << signs)
+            .rev()
+            .map(|taken| (0..signs).map(|sign| taken >> sign & 1 == 1).collect())
+            .collect(),
+        _ => vec![vec![true; signs], vec![false; signs]],
+    };
 
-    // Likeliest first: every doubt read the likeliest way, then one read
-    // another way, then two.
-    let mut other_ways: Vec<Vec<(usize, Side)>> = vec![Vec::new()];
-    const WAYS: [Side; 2] = [Side::Left, Side::Right];
-    for (index, first) in doubts.iter().enumerate() {
-        for way in WAYS {
-            other_ways.push(vec![(*first, way)]);
-            for second in &doubts[index + 1..] {
-                for other in WAYS {
-                    other_ways.push(vec![(*first, way), (*second, other)]);
+    // The first order found whose brackets and numbers sit as people write
+    // them. Failing that, the one in which they are least odd.
+    let mut least_odd: Option<(usize, Vec<usize>)> = None;
+    for taken in &every_way {
+        let in_a_number = |at: usize| {
+            always_in_a_number.contains(&at)
+                || may_be_in_a_number
+                    .iter()
+                    .zip(taken)
+                    .any(|(places, taken)| *taken && places.contains(&at))
+        };
+        let pieces = pieces_where(characters, &in_a_number);
+        let doubts: Vec<usize> = (0..pieces.len())
+            .filter(|at| matches!(pieces[*at].0, Piece::Digits | Piece::Bracket))
+            .take(MOST_DOUBTS)
+            .collect();
+
+        // Likeliest first: every doubt read the likeliest way, then one
+        // read another way, then two.
+        let mut other_ways: Vec<Vec<(usize, Side)>> = vec![Vec::new()];
+        const WAYS: [Side; 2] = [Side::Left, Side::Right];
+        for (index, first) in doubts.iter().enumerate() {
+            for way in WAYS {
+                other_ways.push(vec![(*first, way)]);
+                for second in &doubts[index + 1..] {
+                    for other in WAYS {
+                        other_ways.push(vec![(*first, way), (*second, other)]);
+                    }
                 }
             }
         }
-    }
-    other_ways.sort_by_key(Vec::len);
+        other_ways.sort_by_key(Vec::len);
 
-    // The first order found whose brackets sit as brackets are written.
-    // Failing that, the one whose brackets are least odd.
-    let mut least_odd: Option<(usize, Vec<usize>)> = None;
-    for told in &other_ways {
-        let levels = levels(&pieces, characters, drawn, told);
-        let order = logical_order(&levels);
-        if !checks_out(characters, &order, drawn) {
-            continue;
-        }
-        let logical: Vec<char> = order.iter().map(|at| characters[*at]).collect();
-        match oddness_of_brackets(&logical) {
-            0 => return Some(order),
-            oddness if least_odd.as_ref().is_none_or(|(least, _)| oddness < *least) => {
-                least_odd = Some((oddness, order))
+        for told in &other_ways {
+            let levels = levels(&pieces, characters, drawn, told);
+            let order = logical_order(&levels);
+            if !checks_out(characters, &order, drawn) {
+                continue;
             }
-            _ => {}
+            let logical: Vec<char> = order.iter().map(|at| characters[*at]).collect();
+            match oddness_of_brackets(&logical) + oddness_of_numbers(&logical) {
+                0 => return Some(order),
+                oddness if least_odd.as_ref().is_none_or(|(least, _)| oddness < *least) => {
+                    least_odd = Some((oddness, order))
+                }
+                _ => {}
+            }
         }
     }
     least_odd.map(|(_, order)| order)
@@ -533,13 +568,30 @@ fn oddness_of_brackets(text: &[char]) -> usize {
     oddness + open.len() * NO_PARTNER
 }
 
-/// A screen row cut into pieces, each with how many characters it holds.
-fn pieces(characters: &[char]) -> Vec<(Piece, usize)> {
-    pieces_where(characters, &|_| false)
+/// How far the numbers of a text are from the way numbers are written: a
+/// percent sign right after its number, a currency sign right before it.
+/// Zero when every such sign stands so.
+///
+/// `Python %50` in a row drawn right to left is what the app draws for
+/// «50% Python» and for «Python %50», and `abc 5$` for «$5 abc» and for
+/// «$abc 5». This is what tells them apart.
+fn oddness_of_numbers(text: &[char]) -> usize {
+    let is_digit = |at: Option<usize>| {
+        at.and_then(|at| text.get(at))
+            .is_some_and(|c| layout::bearing(*c) == Bearing::Digit)
+    };
+    (0..text.len())
+        .filter(|at| match text[*at] {
+            '%' | '٪' | '‰' => !is_digit(at.checked_sub(1)),
+            '$' | '€' | '£' | '¥' => !is_digit(Some(at + 1)),
+            _ => false,
+        })
+        .count()
 }
 
-/// The same, with the marks at the places `in_a_number` names counted as
-/// digits of the number they stand in or beside.
+/// A screen row cut into pieces, each with how many characters it holds.
+/// The marks at the places `in_a_number` names are counted as digits of the
+/// number they stand in or beside.
 fn pieces_where(characters: &[char], in_a_number: &dyn Fn(usize) -> bool) -> Vec<(Piece, usize)> {
     let mut pieces: Vec<(Piece, usize)> = Vec::new();
     for (at, character) in characters.iter().enumerate() {
