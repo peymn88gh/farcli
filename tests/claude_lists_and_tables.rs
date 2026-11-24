@@ -332,3 +332,152 @@ fn a_table_row_whose_bars_cannot_be_put_under_the_borders_stays_as_drawn() {
 
     assert!(run.row_is_as_drawn(3), "{}", run.row(3));
 }
+
+/// The rows of a list whose first item wraps onto a second row, as the
+/// app draws them and as they should be shown.
+fn wrapped_list() -> (Vec<String>, Vec<String>) {
+    let drawn = vec![
+        item(0, "-", "یک مورد بلند که به خط دوم "),
+        carried_on(2, "می\u{200c}رود و تمام"),
+        item(0, "-", "مورد دوم"),
+    ];
+    let shown = vec![
+        from_right_edge(&[" ", &from_the_right("ﯾﮏ ﻣﻮﺭﺩ ﺑﻠﻨﺪ ﮐﻪ ﺑﻪ ﺧﻂ ﺩﻭﻡ"), " -"].concat()),
+        from_right_edge(&[from_the_right("ﻣﯽﺭﻭﺩ ﻭ ﺗﻤﺎﻡ").as_str(), "  "].concat()),
+        from_right_edge(&[from_the_right("ﻣﻮﺭﺩ ﺩﻭﻡ").as_str(), " -"].concat()),
+    ];
+    (drawn, shown)
+}
+
+#[test]
+fn a_wrapped_item_cut_by_the_top_of_the_classic_display_reads_the_same_on_both_sides_of_the_cut() {
+    let (drawn, shown) = wrapped_list();
+    let mut run = Run::start(30, 5);
+
+    // The reply fills the screen and its first row scrolls off.
+    run.app_writes(reply_with(&drawn));
+    assert_eq!(run.row(1), shown[0]);
+    assert_eq!(run.row(2), shown[1]);
+
+    // Two more rows scroll off. The top of the screen now cuts through
+    // the item: its first row, with the marker, is found by scrolling
+    // back, and its second row is the first thing on screen.
+    run.app_writes("\r\n");
+    run.app_writes("\r\n");
+    assert_eq!(run.terminal.scrollback_text().last(), Some(&shown[0]));
+    assert_eq!(run.row(0), shown[1]);
+    assert_eq!(run.row(1), shown[2]);
+
+    // The app draws something else, and the rows stay as they were.
+    run.app_writes("\x1b[5;1Hdone");
+    assert_eq!(run.row(0), shown[1]);
+    assert_eq!(run.row(1), shown[2]);
+
+    // And the second row leaves the screen as it was shown.
+    run.app_writes("\r\n");
+    assert_eq!(run.terminal.scrollback_text().last(), Some(&shown[1]));
+    assert_eq!(run.row(0), shown[2]);
+}
+
+/// The bytes that draw `rows` from the top of the fullscreen display, the
+/// way Claude Code draws the conversation again after the user scrolls.
+fn fullscreen_frame(rows: &[String]) -> String {
+    let mut bytes = String::new();
+    for (row, text) in rows.iter().enumerate() {
+        bytes.push_str(&format!("\x1b[{};1H\x1b[2K{}", row + 1, placed(2, text)));
+    }
+    bytes
+}
+
+#[test]
+fn in_the_fullscreen_display_the_second_row_of_an_item_reads_the_same_with_its_marker_out_of_sight()
+{
+    let (drawn, shown) = wrapped_list();
+    let mut run = Run::start(30, 6);
+    run.app_writes("\x1b[?1049h");
+    let empty = String::new();
+
+    run.app_writes(fullscreen_frame(&[
+        empty.clone(),
+        drawn[0].clone(),
+        drawn[1].clone(),
+        drawn[2].clone(),
+        empty.clone(),
+    ]));
+    assert_eq!(run.row(1), shown[0]);
+    assert_eq!(run.row(2), shown[1]);
+
+    // Scrolled down by two rows: the item's second row is the first thing
+    // on screen, with nothing in sight that says where its text begins or
+    // which way it runs. farcli has seen the item it belongs to.
+    run.app_writes(fullscreen_frame(&[
+        drawn[1].clone(),
+        drawn[2].clone(),
+        empty.clone(),
+        empty.clone(),
+        empty,
+    ]));
+    assert_eq!(run.row(0), shown[1]);
+    assert_eq!(run.row(1), shown[2]);
+}
+
+#[test]
+fn in_the_fullscreen_display_the_second_row_of_an_item_never_seen_whole_stays_as_drawn() {
+    // A session started again and scrolled into the middle of an item:
+    // the row could be the end of an item under a bullet or under a
+    // number, or a row of code, and those begin in different columns.
+    let (drawn, shown) = wrapped_list();
+    let mut run = Run::start(30, 6);
+    run.app_writes("\x1b[?1049h");
+
+    run.app_writes(fullscreen_frame(&[drawn[1].clone(), drawn[2].clone()]));
+
+    assert!(run.row_is_as_drawn(0), "{}", run.row(0));
+    assert_eq!(run.row(1), shown[2]);
+}
+
+#[test]
+fn a_table_cut_by_the_top_of_the_screen_keeps_its_rows_as_they_were_shown() {
+    let mut run = Run::start(30, 6);
+    let last_row = format!("  │ {} │ 10 x 20 │", from_the_right("ﺁﯾﮑﻮﻥ"));
+
+    // The table is longer than what is left of the screen: its first rows
+    // scroll off as it is written.
+    run.app_writes(reply_with(&table()));
+    assert_eq!(run.row(3), last_row);
+    let scrolled_off = run.terminal.scrollback_text();
+    assert!(scrolled_off.contains(&format!(
+        "  │  {}  │  {} │",
+        from_the_right("ﻧﺎﻡ"),
+        from_the_right("ﺍﻧﺪﺍﺯﻩ")
+    )));
+
+    // The app draws something else. The rows of the table still on screen
+    // tell themselves by their bars and borders.
+    run.app_writes("\x1b[6;1Hdone");
+    assert_eq!(run.row(3), last_row);
+    assert_eq!(
+        run.row(1),
+        format!("  │  {} │ 33 x 20 │", from_the_right("ﻟﻮﮔﻮ"))
+    );
+}
+
+#[test]
+fn a_list_in_a_code_block_stays_as_drawn() {
+    // The lines of a block of code that begin with a dash, as the lines
+    // of a comparison of two texts do, are not a list. The app draws the
+    // words of a code block in the Terminal's numbered colours.
+    let mut run = Run::start(30, 8);
+    let coloured = |text: &str| format!("\x1b[31m{}\x1b[39m", as_drawn(text));
+
+    run.app_writes(format!(
+        "●{}\r\n\r\n  - {}\r\n  + {}\r\n",
+        placed(2, &as_drawn("سلام")),
+        coloured("مورد اول"),
+        coloured("مورد دوم")
+    ));
+
+    assert_eq!(run.drawn_row(2), "  - لوا دروم");
+    assert!(run.row_is_as_drawn(2), "{}", run.row(2));
+    assert!(run.row_is_as_drawn(3), "{}", run.row(3));
+}

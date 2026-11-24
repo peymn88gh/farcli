@@ -339,3 +339,204 @@ fn a_row_under_a_table_that_does_not_sit_in_its_columns_stays_as_drawn() {
     assert!(run.row_is_as_drawn(7), "{}", run.row(7));
     assert_ne!(run.row(6), run.drawn_row(6));
 }
+
+#[test]
+fn a_cell_wrapped_onto_a_second_row_keeps_the_direction_of_its_first_row() {
+    let mut run = Run::start(30, 10);
+
+    // Codex wraps the text of a cell inside its column. The second row of
+    // this cell begins with an English word.
+    run.app_writes(reply_with(&[
+        reply_row(&bold(&coloured(" نام    توضیح", HEADING))),
+        reply_row(&dim("━━━━━  ━━━━━━━━━━━━━━")),
+        reply_row(" برگ    این را با"),
+        reply_row("        status ببین"),
+    ]));
+
+    // The column is fourteen cells wide, and its text starts one cell in.
+    assert_eq!(
+        run.row(4),
+        format!(
+            "   {}       {} ",
+            from_the_right("ﺑﺮﮒ"),
+            from_the_right("ﺍﯾﻦ ﺭﺍ ﺑﺎ")
+        )
+        .trim_end()
+    );
+    assert_eq!(
+        run.row(5),
+        format!("           {} status ", from_the_right("ﺑﺒﯿﻦ")).trim_end()
+    );
+}
+
+/// The bytes Codex writes in its inline display to put `rows` above the
+/// row its Input box starts on, `box_row` counted from 1: the rows above
+/// the box scroll up, and those pushed off the top are the Terminal's to
+/// keep for scrolling back.
+fn inserted_above(box_row: usize, rows: &[String]) -> String {
+    let mut bytes = format!("\x1b[?2026h\x1b[1;{box_row}r\x1b[{box_row};1H");
+    for row in rows {
+        bytes.push_str(&format!("\r\n\x1b[0m\x1b[K{row}\x1b[0m"));
+    }
+    bytes.push_str("\x1b[r\x1b[?2026l");
+    bytes
+}
+
+#[test]
+fn a_wrapped_item_cut_by_the_top_of_the_inline_display_reads_the_same_on_both_sides_of_the_cut() {
+    let mut run = Run::start(30, 6);
+    run.app_writes(on_row(4, &input_box("")));
+    run.app_writes(on_row(5, &status_row()));
+    let first = from_right_edge(&[from_the_right("ﯾﮏ ﻣﻮﺭﺩ ﺑﻠﻨﺪ ﮐﻪ ﺑﻪ ﺧﻂ").as_str(), " •"].concat());
+    let second = from_right_edge(&[from_the_right("ﺩﻭﻡ ﻣﯽﺭﻭﺩ").as_str(), "  "].concat());
+
+    run.app_writes(inserted_above(
+        4,
+        &[
+            reply_start("سلام"),
+            String::new(),
+            item(0, "•", "یک مورد بلند که به خط"),
+            carried_on(2, "دوم می\u{200c}رود"),
+        ],
+    ));
+    assert_eq!(run.row(2), first);
+    assert_eq!(run.row(3), second);
+
+    // Three more rows are put above the box. The top of the screen now
+    // cuts through the item: its first row, with the bullet, is found by
+    // scrolling back, and its second row is the first thing on screen.
+    run.app_writes(inserted_above(
+        4,
+        &[item(0, "•", "باد"), String::new(), String::new()],
+    ));
+    assert_eq!(run.terminal.scrollback_text().last(), Some(&first));
+    assert_eq!(run.row(0), second);
+    assert_eq!(
+        run.row(1),
+        from_right_edge(&[from_the_right("ﺑﺎﺩ").as_str(), " •"].concat())
+    );
+
+    // One more, and the second row leaves the screen as it was shown.
+    run.app_writes(inserted_above(4, &[String::new()]));
+    assert_eq!(run.terminal.scrollback_text().last(), Some(&second));
+    // The Input box and the row under it never moved.
+    assert!(run.row_is_as_drawn(4));
+    assert!(run.row_is_as_drawn(5));
+}
+
+/// The row Codex's default display lays over the top row once the message
+/// sent has scrolled out of sight: its start, cut short.
+fn start_of_the_message() -> String {
+    sent_start("پیام کا…")
+}
+
+#[test]
+fn in_the_default_display_the_last_row_of_a_table_reads_the_same_with_its_rules_out_of_sight() {
+    let mut run = Run::start(30, 10);
+    run.app_writes("\x1b[?1049h");
+    let last_row = cells(
+        &format!(" {} ", from_the_right("ﻗﺎﺏ")),
+        " 40 x 30 ",
+        &format!("  {} ", from_the_right("ﭼﻮﺑﯽ")),
+    );
+
+    // The whole table is in sight while it arrives.
+    let mut rows = vec![sent_start("پیام کاربر"), String::new()];
+    rows.extend(table());
+    rows.extend([String::new(), input_box(""), status_row()]);
+    run.app_writes(screen(&rows));
+    assert_eq!(run.row(6), last_row);
+
+    // The conversation moves up under the start of the message, which
+    // stays on the top row. The last row of the table is right under it,
+    // and no rule is left in sight to say where its columns are.
+    run.app_writes(screen(&[
+        start_of_the_message(),
+        reply_row(" قاب    40 x 30    چوبی"),
+        String::new(),
+        reply_row("سلام دنیا"),
+        input_box(""),
+        status_row(),
+    ]));
+
+    assert!(run.row_is_as_drawn(0));
+    assert_eq!(run.row(1), last_row);
+}
+
+#[test]
+fn in_the_default_display_the_last_row_of_a_table_never_seen_under_its_rules_stays_as_drawn() {
+    let mut run = Run::start(30, 10);
+    run.app_writes("\x1b[?1049h");
+
+    run.app_writes(screen(&[
+        start_of_the_message(),
+        reply_row(" قاب    40 x 30    چوبی"),
+        String::new(),
+        reply_row("سلام دنیا"),
+        input_box(""),
+        status_row(),
+    ]));
+
+    assert!(run.row_is_as_drawn(1), "{}", run.row(1));
+    assert_ne!(run.row(3), run.drawn_row(3));
+}
+
+#[test]
+fn in_the_default_display_the_second_row_of_an_item_never_seen_whole_is_read_by_its_own_first_letter(
+) {
+    let mut run = Run::start(30, 10);
+    run.app_writes("\x1b[?1049h");
+
+    // Codex draws Logical order, so a row an item wrapped onto needs only
+    // the item's direction, and a row that begins with a Farsi letter is
+    // far more often part of a Farsi item.
+    run.app_writes(screen(&[
+        start_of_the_message(),
+        carried_on(2, "دوم می\u{200c}رود"),
+        item(0, "•", "باد"),
+        String::new(),
+        input_box(""),
+        status_row(),
+    ]));
+
+    assert_eq!(
+        run.row(1),
+        from_right_edge(&[from_the_right("ﺩﻭﻡ ﻣﯽﺭﻭﺩ").as_str(), "  "].concat())
+    );
+    assert_eq!(
+        run.row(2),
+        from_right_edge(&[from_the_right("ﺑﺎﺩ").as_str(), " •"].concat())
+    );
+}
+
+#[test]
+fn lines_of_code_that_begin_with_a_dash_are_not_a_list() {
+    // Codex colours every character of a code block. The lines of a
+    // comparison of two texts begin with a dash or a plus sign.
+    let mut run = Run::start(30, 8);
+
+    run.app_writes(reply_with(&[
+        reply_row(&coloured("- مورد اول", (243, 139, 168))),
+        reply_row(&coloured("+ مورد دوم", (166, 227, 161))),
+    ]));
+
+    assert!(run.row_is_as_drawn(2), "{}", run.row(2));
+    assert!(run.row_is_as_drawn(3), "{}", run.row(3));
+}
+
+#[test]
+fn a_list_item_drawn_wholly_in_bold_is_still_a_list_item() {
+    // Codex draws bold words in a colour of their own. A whole item in
+    // bold has a colour on every character, as code has, but code is
+    // never bold.
+    let mut run = Run::start(30, 8);
+    let marker = coloured("• ", MARKER);
+    let text = bold(&coloured("مورد اول", (243, 139, 168)));
+
+    run.app_writes(reply_with(&[reply_row(&format!("{marker}{text}"))]));
+
+    assert_eq!(
+        run.row(2),
+        from_right_edge(&[from_the_right("ﻣﻮﺭﺩ ﺍﻭﻝ").as_str(), " •"].concat())
+    );
+}

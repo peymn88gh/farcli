@@ -39,6 +39,17 @@
 //! paragraph, and where the writer broke the line (a poem, an address) each
 //! line is a paragraph of its own.
 //!
+//! A list item begins with a marker, a bullet or a number and a full stop,
+//! which Codex draws in a colour, four columns further in for each list the
+//! item is inside. The rows its text wraps onto start two or three columns
+//! further in than the marker. Each item is a region of its own.
+//!
+//! A table has no upright bars. Under its header and between its rows
+//! Codex draws a rule, a stretch of dashes for each column, and that is
+//! what tells a table and where its columns are. The whole table is one
+//! region. While the model is still writing a table Codex shows its source,
+//! which is left as drawn.
+//!
 //! One kind of code looks exactly like lines of prose and is read as such:
 //! a block with no language named, or in a language Codex does not know,
 //! whose lines all start at the left edge. Codex gives it no colour.
@@ -497,7 +508,8 @@ fn list_items(
         // A number is drawn with its last digit in the marker's column.
         let marker = marker_len(text, start).filter(|len| {
             let is_bullet = *len == 1;
-            start % 4 == 0 || (!is_bullet && (start + len - 1) % 4 == 1)
+            classes[at] == RowClass::ListItem
+                && (start % 4 == 0 || (!is_bullet && (start + len - 1) % 4 == 1))
         });
         if let Some(len) = marker {
             parts.extend(item.take().map(|(first, _, kind)| (first, at, kind)));
@@ -616,8 +628,22 @@ fn row_class(row: &[Cell]) -> RowClass {
     };
     let first = text[start].character;
     let then_empty = |at: usize| text.get(at).is_none_or(is_empty);
-    let list_marker = || marker_len(text, start).is_some();
     let characters = || text.iter().filter(|cell| !is_empty(cell));
+    // Every character in a colour, and neither bold from end to end nor
+    // italic from end to end: that is how Codex draws code.
+    let coloured_as_code = |cells: &[Cell]| {
+        let characters = || cells.iter().filter(|cell| !is_empty(cell));
+        characters().next().is_some()
+            && characters().all(|cell| cell.style.foreground != Color::Default)
+            && !characters().all(|cell| cell.style.bold)
+            && !characters().all(|cell| cell.style.italic)
+    };
+    // A line of code can begin with a dash too, as the lines of a
+    // comparison of two texts do. Codex gives a list's marker a colour and
+    // leaves the item's text in the Terminal's own, unless the whole item
+    // is bold or slanted.
+    let list_marker =
+        || marker_len(text, start).is_some_and(|len| !coloured_as_code(&text[start + len..]));
     if is_line_drawing(first) {
         if characters().all(|cell| matches!(cell.character, '─' | '━' | '═')) {
             RowClass::Rule

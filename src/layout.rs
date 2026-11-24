@@ -3,6 +3,17 @@
 //! and Screen positions.
 //!
 //! It holds no state and knows nothing about Terminals or Target apps.
+//!
+//! The order is that of the Unicode reordering rules (`reorder.rs`), with a
+//! few rules of farcli's own where those rules alone do not give what a
+//! Farsi reader wants. Each is in one place, so that it can be found and
+//! replaced:
+//!
+//! - which way a paragraph runs, and a paragraph or list item with no
+//!   letter in it (`direction.rs`);
+//! - numbers joined by a mark keep the order they were written in
+//!   (`numbers.rs`);
+//! - a word with no Farsi in it stays in one piece (`words.rs`).
 
 mod brackets;
 mod char_class;

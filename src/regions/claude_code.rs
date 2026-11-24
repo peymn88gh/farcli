@@ -36,6 +36,17 @@
 //! a block in a language the app knows, or named `text`, in which no word
 //! is a keyword, number, string, comment or built-in name.
 //!
+//! A block is a list from its first row that begins with a list marker: a
+//! dash, a star, a plus sign or a number and a full stop. Each item is a
+//! region of its own. The app draws the marker at the left of the item and
+//! the item's text after it, and the rows the text wraps onto under the
+//! text. The marker of an item inside an item stands where the text of the
+//! item around it starts.
+//!
+//! A block is a table from its first row that begins with a line-drawing
+//! character. The whole table is one region: its borders say where its
+//! columns are, and each of its rows tells itself by its bars.
+//!
 //! The same display serves the classic mode, where rows scroll off the top
 //! for good, and the fullscreen mode, where the app draws the conversation
 //! again at whatever place the user has scrolled to.
@@ -375,7 +386,14 @@ impl Walk<'_> {
         if carried_on {
             push(0, text_rows, Kind::ListItem(ItemStart::Above));
         }
+        // Lines of code can begin with a dash too, as the lines of a
+        // comparison of two texts do. The app's colours tell them from a
+        // list, as they tell any code from prose.
+        let coloured_as_code = |row: &Row| holds_code_colour(row) || is_wholly_coloured_or_dim(row);
         let claimed = match kinds.get(text_rows) {
+            Some(RowKind::ListItem) if rows[text_rows..].iter().any(coloured_as_code) => {
+                vec![(text_rows, rows.len(), Kind::Code)]
+            }
             Some(RowKind::ListItem) => list_items(rows, text_rows),
             Some(RowKind::Table) => vec![(text_rows, rows.len(), Kind::Table)],
             Some(_) => vec![(text_rows, rows.len(), Kind::Unsure)],

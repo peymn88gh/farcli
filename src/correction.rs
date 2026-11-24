@@ -3,8 +3,14 @@
 //!
 //! For a program farcli knows nothing about, a row that holds Farsi is a
 //! paragraph of one line, as wide as the Terminal. For a Target app, the
-//! Region finder says where the paragraphs of Agent output are, and only
-//! those are laid out again: the rest of the screen is shown as drawn.
+//! Region finder says where the paragraphs, the list items and the tables
+//! of Agent output are, and only those are laid out again: the rest of the
+//! screen is shown as drawn.
+//!
+//! A list item is its marker and a paragraph: the item's rows are laid
+//! out whole, marker first, so in a Farsi item the marker is on the right
+//! and the rows the text wraps onto end under the text. The cells of a
+//! table are in `tables.rs`.
 
 mod tables;
 
