@@ -752,6 +752,46 @@ fn as_the_app_holds_it(app: &ClaudeCode, cols: usize) -> Vec<String> {
         .collect()
 }
 
+/// How the Terminal shows the message the app holds.
+#[derive(Debug, PartialEq)]
+enum Shown {
+    /// As a text field: every row as `as_the_app_holds_it` gives it.
+    AsATextField,
+    /// As a text field, but for empty cells at the two ends of a row: a
+    /// space at the start or the end of a row is drawn by nobody, so there
+    /// are frames in which farcli cannot know of one yet.
+    BesideTheEdge,
+    /// Exactly as the app drew it, which is what farcli falls back to when
+    /// it cannot tell the message.
+    AsTheAppDrewIt,
+}
+
+/// Says how the Terminal shows the message the app holds, and fails when
+/// it shows anything else: the characters of some row in another order,
+/// or other characters.
+fn shown(app: &ClaudeCode, cols: usize, said: &str) -> Shown {
+    let (shown, held) = (app.shown(), as_the_app_holds_it(app, cols));
+    if shown == held {
+        return Shown::AsATextField;
+    }
+    let between_the_edges = |rows: &[String]| -> Vec<String> {
+        let texts = rows
+            .iter()
+            .map(|row| row.chars().skip(2).collect::<String>());
+        texts
+            .map(|text| text.trim_matches(' ').to_string())
+            .collect()
+    };
+    if between_the_edges(&shown) == between_the_edges(&held) {
+        return Shown::BesideTheEdge;
+    }
+    assert!(
+        app.is_shown_as_drawn(),
+        "{said}\n the Terminal shows {shown:?}\n the app holds     {held:?}"
+    );
+    Shown::AsTheAppDrewIt
+}
+
 #[test]
 fn after_any_sequence_of_editing_keys_the_text_shown_is_the_text_the_app_holds() {
     // Messages of Farsi and English words, numbers and punctuation, typed
@@ -791,6 +831,14 @@ fn after_any_sequence_of_editing_keys_the_text_shown_is_the_text_the_app_holds()
 
     let mut app = ClaudeCode::start(cols as u16, 16);
     let (mut arrows, mut moved_a_cell, mut changed_row, mut right_to_left_rows) = (0, 0, 0, 0);
+    let (mut frames, mut beside_the_edge, mut as_the_app_drew_it) = (0, 0, 0);
+    let mut look = |app: &ClaudeCode, said: &str| -> Shown {
+        let how = shown(app, cols, said);
+        frames += 1;
+        beside_the_edge += usize::from(how == Shown::BesideTheEdge);
+        as_the_app_drew_it += usize::from(how == Shown::AsTheAppDrewIt);
+        how
+    };
     for _ in 0..150 {
         let words: Vec<&str> = (0..1 + pick(10))
             .map(|_| WORDS[pick(WORDS.len())])
@@ -822,8 +870,13 @@ fn after_any_sequence_of_editing_keys_the_text_shown_is_the_text_the_app_holds()
                 _ => Key::Character(TYPED[pick(TYPED.len())]),
             };
             // One time in five, one or two more keys come before the app
-            // draws.
-            if pick(5) == 0 {
+            // draws. Not after a key that deletes a word or the rest of a
+            // line: when it deletes one character only, the frame the app
+            // then draws is also what it would draw for a key that moved
+            // the cursor and a Backspace after it, and farcli takes it for
+            // that.
+            let deletes_a_stretch = matches!(key, Key::DeleteWord | Key::DeleteToEnd);
+            if pick(5) == 0 && !deletes_a_stretch {
                 let mut together = vec![key];
                 for _ in 0..1 + pick(2) {
                     let key = [Key::Left, Key::Right, Key::Character('م'), Key::Backspace][pick(4)]
@@ -838,13 +891,12 @@ fn after_any_sequence_of_editing_keys_the_text_shown_is_the_text_the_app_holds()
                 // The app draws when it has handled the first of them, and
                 // again when it has handled them all.
                 app.handles(1);
-                assert_eq!(
-                    app.shown(),
-                    as_the_app_holds_it(&app, cols),
-                    "{said}, when the app had handled the first of the last"
+                look(
+                    &app,
+                    &format!("{said}, when the app had handled one of the last"),
                 );
                 app.handles(together.len() - 1);
-                assert_eq!(app.shown(), as_the_app_holds_it(&app, cols), "{said}");
+                look(&app, &said);
                 continue;
             }
             pressed.push(format!("{key:?}"));
@@ -855,7 +907,9 @@ fn after_any_sequence_of_editing_keys_the_text_shown_is_the_text_the_app_holds()
             let after = position(&app);
 
             // The text shown is the text the app holds, row by row.
-            assert_eq!(app.shown(), as_the_app_holds_it(&app, cols), "{said}");
+            if look(&app, &said) != Shown::AsATextField {
+                continue;
+            }
             match key {
                 Key::Left | Key::Right => {
                     // The cursor went one cell to the side the key points
@@ -900,6 +954,17 @@ fn after_any_sequence_of_editing_keys_the_text_shown_is_the_text_the_app_holds()
     assert!(moved_a_cell > 1500, "{moved_a_cell}");
     assert!(changed_row > 30, "{changed_row}");
     assert!(right_to_left_rows > 3000, "{right_to_left_rows}");
+    // Nearly every frame showed the message as a text field.
+    assert!(frames > 6000, "{frames}");
+    assert!(
+        beside_the_edge * 100 < frames,
+        "{beside_the_edge} of {frames}"
+    );
+    assert!(
+        as_the_app_drew_it * 100 < frames,
+        "{as_the_app_drew_it} of {frames}"
+    );
+    println!("{frames} frames, {beside_the_edge} beside the edge, {as_the_app_drew_it} as drawn");
 }
 
 #[test]
@@ -1126,4 +1191,52 @@ fn while_the_correction_is_switched_off_every_arrow_reaches_the_app_as_pressed()
 
     assert_eq!(forwarded, as_pressed(Key::Right).repeat(5));
     assert_eq!(app.cursor(), at(0, end));
+}
+
+#[test]
+fn a_box_that_shows_the_apps_hint_holds_nothing_not_even_a_space_nobody_could_see() {
+    let mut app = ClaudeCode::start(40, 10);
+    // A message of one space is sent. Nothing on screen ever showed the
+    // space, and nothing shows it going. But the app's hint is back, and
+    // the app shows that only in a box that holds nothing.
+    app.types(" ");
+    app.presses(Key::Enter);
+    assert_eq!(app.shown(), [format!("{MARK}{}", app.hint)]);
+
+    app.types("سلام world");
+    // Left of the end there is nothing, and one cell to the right is the
+    // `w`: no space is left over at the end of the message to step on.
+    app.presses(Key::Left);
+    assert_eq!(app.cursor(), at(0, left_of(10, 40)));
+
+    app.presses(Key::Right);
+
+    assert_eq!(app.cursor(), at(0, left_of(10, 40) + 1));
+    assert_eq!(app.character_under_the_cursor(), 'w');
+}
+
+#[test]
+fn a_letter_typed_beside_a_number_is_put_where_the_cursor_says_not_where_farcli_believed() {
+    let mut app = ClaudeCode::start(30, 12);
+    // The second row begins with an English word, so the app draws it from
+    // the left, and draws a Farsi letter typed before the `7` exactly as it
+    // would draw the letter typed after it. Only its cursor tells the two
+    // apart.
+    app.types("سلام دنیا خوبی دوست من abcde 7");
+    assert_eq!(app.rows_as_typed(), ["سلام دنیا خوبی دوست من", "abcde 7"]);
+
+    // End, Right and a letter before the app draws. It draws when it has
+    // handled End only, which farcli cannot know, and then when it has
+    // handled the rest: the letter is before the `7`.
+    app.press(Key::End);
+    app.press(Key::Right);
+    app.press(Key::Character('م'));
+    app.handles(1);
+    app.handles(2);
+
+    assert_eq!(app.rows_as_typed()[1], "abcde م7");
+    assert_eq!(
+        app.shown(),
+        right_to_left(&["سلام دنیا خوبی دوست من", "abcde م7"], 30)
+    );
 }

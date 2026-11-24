@@ -509,6 +509,22 @@ impl InputBox {
     /// drew it when the message cannot be told.
     pub fn correct(&mut self, place: Place) -> Option<usize> {
         self.shown = None;
+        let shows_the_apps_hint = place.is_empty
+            && place.rows.iter().any(|row| {
+                let mut cells = row[place.cols.clone()].iter();
+                cells.any(|cell| cell.character != ' ' && !cell.is_left_alone())
+            });
+        if shows_the_apps_hint {
+            // The app shows its hint only in a box that holds nothing, so
+            // the message believed is gone whatever became of it: spaces
+            // at its end that nothing on screen ever showed, too. Keys
+            // typed since are still on their way.
+            self.known = Some(Message {
+                units: Vec::new(),
+                cursor: 0,
+                cursor_is_a_guess: false,
+            });
+        }
         let empty = [];
         let screen: Vec<Drawn> = if place.is_empty {
             vec![Drawn::of(&empty)]
@@ -637,29 +653,28 @@ impl InputBox {
 
         // The message after each of the keys waiting, oldest first. The
         // latest that the screen bears out, cursor and all, is the one the
-        // app has drawn. Failing that, the latest whose text it bears out.
+        // app has drawn. Failing that, the latest whose text it bears out
+        // and in which nothing but the cursor has moved.
         //
-        // A key that changes the message can leave the screen as it was:
-        // a space typed or deleted at the end of a row is not drawn. The
-        // screen then bears the key out only by where its cursor is. With
-        // the cursor elsewhere, nothing says the app has handled that key,
-        // nor any key after it.
+        // A key that changes the message is borne out only with the cursor
+        // where that key leaves it. One row on screen is what the app
+        // draws for more than one message: a letter typed before a number
+        // is drawn as the same letter typed after it, and a space typed or
+        // deleted at the end of a row is not drawn at all. Only the cursor
+        // says where such a key was done, or that it was.
         let mut best: Option<(Message, Reading, usize, bool)> = None;
         let mut message = known.clone();
-        let (mut borne_out_before, mut only_the_cursor_says) = (false, false);
+        let mut only_the_cursor_says = false;
         for done in 0..=self.waiting.len() {
             let edit = done.checked_sub(1).map(|last| self.waiting[last]);
             if edit.is_some_and(|edit| !message.apply(edit)) {
                 break;
             }
+            only_the_cursor_says |=
+                !matches!(edit, None | Some(Edit::Back | Edit::On | Edit::Other));
             let Some((reading, cursor_agrees)) = borne_out(&message) else {
-                borne_out_before = false;
                 continue;
             };
-            let moves_the_cursor_only =
-                matches!(edit, None | Some(Edit::Back | Edit::On | Edit::Other));
-            only_the_cursor_says |= borne_out_before && !moves_the_cursor_only;
-            borne_out_before = true;
             let is_better = best.as_ref().is_none_or(|(.., agreed)| !agreed);
             if cursor_agrees || (is_better && !only_the_cursor_says) {
                 best = Some((message.clone(), reading, done, cursor_agrees));
@@ -687,7 +702,7 @@ impl InputBox {
                     continue 'without;
                 }
             }
-            if let Some((reading, _)) = borne_out(&message) {
+            if let Some((reading, true)) = borne_out(&message) {
                 return Some((message, reading, self.waiting.len()));
             }
         }
