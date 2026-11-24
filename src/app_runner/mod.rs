@@ -5,7 +5,9 @@
 mod windows;
 
 #[cfg(windows)]
-pub use windows::{printed_by, run_directly, AppInput, Host, RunningApp, ShippedFiles};
+pub use windows::{
+    printed_by, run_directly, version_said, AppInput, Host, RunningApp, ShippedFiles,
+};
 
 /// Runs `program` with `args` with no hidden terminal: it reads and writes
 /// whatever farcli itself was given. Returns the program's exit status.

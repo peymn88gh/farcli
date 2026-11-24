@@ -11,7 +11,7 @@ use crate::hidden_screen::{Aside, HiddenScreen};
 use crate::hidden_terminal::HiddenTerminal;
 use crate::hotkey::{Hotkey, Pressed};
 use crate::painter::{Frame, Painter};
-use crate::screen::Position;
+use crate::screen::{Cell, Position, Row, Style};
 use crate::terminal_input::{Input, TerminalInput};
 use crate::Size;
 
@@ -30,6 +30,9 @@ pub struct Session {
     /// False while the user has switched the correction off with the
     /// hotkey: the Terminal then shows what the Target app drew.
     correcting: bool,
+    /// A line of farcli's own that is shown over the top row of the
+    /// alternate screen, until the user presses a key.
+    line_in_sight: Option<String>,
 }
 
 /// What farcli tells a hidden terminal that asks what kind of terminal it
@@ -61,6 +64,7 @@ impl Session {
             characters_as_keys: false,
             hotkey: Hotkey::new(),
             correcting: true,
+            line_in_sight: None,
         }
     }
 
@@ -77,6 +81,15 @@ impl Session {
             characters_as_keys: hidden_terminal.makes_up_keys_for_plain_characters(),
             ..Session::start(profile, size, cursor)
         }
+    }
+
+    /// Whoever started the session wrote `line` to the Terminal just before
+    /// it, for the user to read. On the main screen the line stays above
+    /// what the Target app draws. An app that moves to the alternate screen
+    /// hides it within a moment, so there the session shows it over the top
+    /// row, until the user presses a key.
+    pub fn keep_in_sight(&mut self, line: &str) {
+        self.line_in_sight = Some(line.to_string());
     }
 
     /// The Target app wrote `bytes`.
@@ -130,6 +143,10 @@ impl Session {
         let mut reaction = Reaction::default();
         let mut switched = false;
         for input in inputs {
+            if self.line_in_sight.is_some() && is_the_user_typing(input) {
+                self.line_in_sight = None;
+                switched = true;
+            }
             // The hotkey is farcli's own and never reaches the Target app.
             match self.hotkey.sees(input) {
                 Pressed::Now => {
@@ -199,6 +216,47 @@ impl Session {
                 cursor_visible: frame.cursor_visible,
             });
         }
+        if let (Some(line), true) = (
+            &self.line_in_sight,
+            self.hidden_screen.on_alternate_screen(),
+        ) {
+            if let Some(top) = frame.rows.first_mut() {
+                *top = row_of_farclis_own(line, top.len());
+            }
+        }
         self.painter.paint(&frame)
     }
+}
+
+/// True for a key going down, a typed or pasted character, and the start
+/// of a paste. What a Terminal sends by itself is none of these: an answer
+/// to a question of the app's, a change of focus, a key coming up. A
+/// console host that spells such an answer out does it in keys that have
+/// no key number and carry a plain English character. A key the user
+/// pressed has a key number, or carries a letter of the user's language.
+fn is_the_user_typing(input: &Input) -> bool {
+    match input {
+        Input::Key(key) => key.down && (key.key != 0 || key.character >= 0x80),
+        Input::Character(_) | Input::PasteStarts => true,
+        _ => false,
+    }
+}
+
+/// A row `cols` wide that holds `line` and is plainly not the Target app's:
+/// drawn from end to end with the Terminal's two colours changed over. A
+/// line longer than the row is cut.
+fn row_of_farclis_own(line: &str, cols: usize) -> Row {
+    let style = Style {
+        inverse: true,
+        ..Style::default()
+    };
+    line.chars()
+        .chain(std::iter::repeat(' '))
+        .take(cols)
+        .map(|character| Cell {
+            character,
+            style: style.clone(),
+            ..Cell::blank()
+        })
+        .collect()
 }
