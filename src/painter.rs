@@ -232,9 +232,37 @@ impl Painter {
             self.shown.rows[row][text_end..cols].fill(Cell::blank());
         }
 
+        // A cell the app has not drawn is left as the Terminal has it. One
+        // that farcli drew on all the same, to lay out the row it is in,
+        // is emptied again: what the Terminal showed there before is gone.
+        let emptied = Cell::blank();
         let mut col = 0;
         while col < text_end {
-            if wanted[col] == self.shown.rows[row][col] || wanted[col].is_left_alone() {
+            let shown = &self.shown.rows[row][col];
+            if wanted[col] == *shown {
+                col += 1;
+                continue;
+            }
+            if wanted[col].is_left_alone() {
+                if !shown.is_left_alone() && !shown.is_blank() {
+                    self.move_cursor(
+                        out,
+                        Position {
+                            row: row as u16,
+                            col: col as u16,
+                        },
+                    );
+                    self.set_pen(out, &emptied.style);
+                    out.push(emptied.character);
+                    self.cursor = match self.cursor {
+                        Some(at) if col + 1 < cols => Some(Position {
+                            row: at.row,
+                            col: (col + 1) as u16,
+                        }),
+                        _ => None,
+                    };
+                    self.shown.rows[row][col] = emptied.clone();
+                }
                 col += 1;
                 continue;
             }

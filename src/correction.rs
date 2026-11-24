@@ -11,6 +11,11 @@
 //! out whole, marker first, so in a Farsi item the marker is on the right
 //! and the rows the text wraps onto end under the text. The cells of a
 //! table are in `tables.rs`.
+//!
+//! Two rules here stand between the Region finder and a screen it was not
+//! built for, such as a later version of the app may draw. Nothing is laid
+//! out until the screen has shown something that only the app draws. And a
+//! paragraph whose rows hold a line or the side of a box is left as drawn.
 
 mod tables;
 
@@ -41,6 +46,13 @@ pub(crate) struct Correction {
     /// An app run with colours switched off never does, and then its code
     /// blocks cannot be told from lines of prose.
     draws_in_colour: bool,
+    /// The screen has shown something that only this Target app draws: the
+    /// mark it starts a reply with, or its Input box. Until then nothing is
+    /// laid out. Rows that only look like part of a reply, such as text
+    /// that starts in the third column under the top of a screen, are not
+    /// enough to go by: a screen that shows nothing of the app's own is
+    /// shown as drawn.
+    knows_the_screen: bool,
     /// The direction of the paragraph that the top of the main screen cuts
     /// through, when there is one.
     direction_above: Option<Direction>,
@@ -79,6 +91,7 @@ impl Correction {
             profile,
             on_alternate_screen: false,
             draws_in_colour: false,
+            knows_the_screen: false,
             direction_above: None,
             seen: HashMap::new(),
             input_box: InputBox::new(),
@@ -207,6 +220,12 @@ impl Correction {
         } else {
             self.finder.find(rows, leaving, self.draws_in_colour)
         };
+        self.knows_the_screen = self.knows_the_screen
+            || self.finder.shows_a_reply_mark(rows)
+            || regions.iter().any(|region| region.kind == Kind::InputBox);
+        if !self.knows_the_screen {
+            return regions;
+        }
         let mut cut_by_the_top = None;
         // The list item before the one being read, when the two stand
         // under one another with no row between: the row after its last,
@@ -304,6 +323,13 @@ impl Correction {
         list: Option<Direction>,
     ) -> Option<Direction> {
         let area = region.cols.clone();
+        // As for a paragraph: an item that shares its rows with a line or
+        // the side of a box is not in an area of its own, and laying it
+        // out again would move the line. Neither app draws that today.
+        let holds_a_line = |row: usize| rows[row][area.clone()].iter().any(draws_a_line);
+        if region.rows.clone().any(holds_a_line) {
+            return None;
+        }
         let keys: Vec<u64> = region
             .rows
             .clone()
@@ -382,6 +408,18 @@ impl Correction {
             .clone()
             .map(|row| drawn_row(&rows[row][region.cols.clone()], row < last))
             .collect();
+        // Text that shares its rows with a line or the side of a box is not
+        // a paragraph in an area of its own, whatever it looked like to
+        // the Region finder: laying it out again would move the line.
+        // Neither app draws that today, so it is left as drawn.
+        if drawn.iter().any(|row| row.cells.iter().any(draws_a_line)) {
+            if self.on_alternate_screen {
+                for row in &drawn {
+                    self.remember(key(row), Seen::NotInParagraph);
+                }
+            }
+            return None;
+        }
         let seen_before = || drawn.first().and_then(|row| self.seen.get(&key(row)));
         let start = match start {
             ParagraphStart::Here => Start::Here,
@@ -442,6 +480,12 @@ fn drawn_row(area: &[Cell], wrapped: bool) -> DrawnRow {
         cells: drawn_cells(&area[..end]),
         wrapped,
     }
+}
+
+/// True for a cell that holds one of the characters lines, boxes and the
+/// borders of tables are drawn with.
+fn draws_a_line(cell: &Cell) -> bool {
+    ('\u{2500}'..='\u{257f}').contains(&cell.character)
 }
 
 /// Cells the app moved over without drawing, between cells it did draw,

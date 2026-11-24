@@ -67,7 +67,9 @@ impl Correction {
                 (None, Some(Seen::InTable(columns))) => columns.clone(),
                 (None, _) => continue,
             };
-            if !sits_in_columns(cells, &columns) {
+            // Columns remembered from a wider Terminal may not fit this one.
+            let fit = columns.iter().all(|column| column.end <= cells.len());
+            if !fit || !sits_in_columns(cells, &columns) {
                 continue;
             }
             directions.resize(columns.len(), None);
@@ -231,18 +233,22 @@ fn sits_in_columns(row: &[Cell], columns: &[Range<usize>]) -> bool {
     })
 }
 
+/// The corners and joints Claude Code draws the borders of a table with.
+/// A box drawn with any other, such as round corners, is not one of its
+/// tables, and is left as drawn.
+const JOINTS: [char; 9] = ['┌', '┬', '┐', '├', '┼', '┤', '└', '┴', '┘'];
+
 /// Where the upright strokes of a border row of Claude Code's are, as
 /// places in the row: its corners and the joints between its columns.
-/// `None` for a row that is not a border.
+/// `None` for a row that is not a border of a table.
 fn border_bars(row: &[Cell]) -> Option<Vec<usize>> {
-    let is_line_drawing = |character: char| ('\u{2500}'..='\u{257f}').contains(&character);
     let mut bars = Vec::new();
     let mut dashes = 0;
     for (at, cell) in row.iter().enumerate() {
         match cell.character {
             _ if is_empty(cell) => {}
             '─' => dashes += 1,
-            character if is_line_drawing(character) && character != BAR => bars.push(at),
+            character if JOINTS.contains(&character) => bars.push(at),
             _ => return None,
         }
     }

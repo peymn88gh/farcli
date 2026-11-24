@@ -21,11 +21,12 @@ use farcli::screen::Position;
 use farcli::Size;
 
 /// A stand-in Target app: it tells its version when asked, and otherwise
-/// asks for a line and says it back.
+/// asks for a line and says it back. Its version is older than the one
+/// farcli was tested with, so that farcli has nothing to say about it.
 const STAND_IN_CLAUDE: &str = "\
 @echo off\r
 if \"%1\"==\"--version\" (\r
-  echo 9.8.7 ^(Claude Code^)\r
+  echo 1.2.3 ^(Claude Code^)\r
   exit /b 0\r
 )\r
 set /p said=say: \r
@@ -122,7 +123,7 @@ fn farcli_records_its_session_to_the_file_it_is_told_to() {
     fs::remove_dir_all(&folder).unwrap();
 
     assert_eq!(recording.about.app, "claude");
-    assert_eq!(recording.about.app_version, "9.8.7 (Claude Code)");
+    assert_eq!(recording.about.app_version, "1.2.3 (Claude Code)");
     assert_eq!(recording.about.system, "Windows native");
     assert_eq!(recording.about.size, size);
     assert_eq!(recording.about.cursor, Position { row: 0, col: 0 });

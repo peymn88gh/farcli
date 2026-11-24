@@ -460,6 +460,11 @@ fn covered(row: &[Cell]) -> bool {
     })
 }
 
+/// True when the row begins with the mark that starts a reply.
+pub(crate) fn starts_a_reply(row: &[Cell]) -> bool {
+    shape(row) == Shape::ReplyHead
+}
+
 fn shape(row: &[Cell]) -> Shape {
     let Some(first) = row.iter().position(|cell| !is_empty(cell)) else {
         return Shape::Empty;
