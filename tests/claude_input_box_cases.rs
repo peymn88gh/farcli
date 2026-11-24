@@ -550,3 +550,78 @@ fn any_message_the_user_did_not_type_is_shown_as_it_was_written_or_as_the_app_dr
     assert!(laid_out_from_the_right > 300, "{laid_out_from_the_right}");
     assert!(as_drawn_with_farsi > 300, "{as_drawn_with_farsi}");
 }
+
+#[test]
+fn any_message_typed_key_by_key_reads_as_typed_after_every_key() {
+    // The same kinds of messages, typed. With the keys to go by, every one
+    // of them is laid out, on every row it wraps onto, after every key.
+    const WORDS: &[&str] = &[
+        "abc",
+        "to",
+        "config.json",
+        "سلام",
+        "می\u{200c}شود",
+        "پیام",
+        "و",
+        "-",
+        "12",
+        "2.5",
+        "۳۴",
+        "10%",
+        "$5",
+        "12-34",
+        "5/6",
+        "+2",
+        "x",
+        "(2.5%)",
+        "(abc)",
+        "(پیام)",
+        "(abc پیام)",
+        "(سلام to)",
+        "[پیام]",
+        "«سلام»",
+    ];
+    const MARKS: &[&str] = &["", "", "", "", ".", "،", ":", "!", "%"];
+    let mut state: u64 = 0x2545_f491_4f6c_dd1d;
+    let mut pick = |from: usize| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state % from as u64) as usize
+    };
+
+    let mut app = ClaudeCode::start(40, 12);
+    let (mut keys, mut wrapped) = (0, 0);
+    for _ in 0..120 {
+        let words: Vec<String> = (0..1 + pick(12))
+            .map(|_| format!("{}{}", WORDS[pick(WORDS.len())], MARKS[pick(MARKS.len())]))
+            .collect();
+        let message = words.join(" ");
+
+        for character in message.chars() {
+            app.presses(Key::Character(character));
+            keys += 1;
+
+            // The message takes the direction of its first letter, once it
+            // has one.
+            let so_far: String = message.chars().take(keys).collect();
+            let direction = claude_code::direction_of(&so_far);
+            let as_typed: Vec<String> = app
+                .rows_as_typed()
+                .iter()
+                .enumerate()
+                .map(|(row, typed)| {
+                    let margin = if row == 0 { MARK } else { "  " };
+                    format!("{margin}{}", laid_out(typed, direction, 38))
+                        .trim_end()
+                        .to_string()
+                })
+                .collect();
+            assert_eq!(app.shown(), as_typed, "{message:?} after {so_far:?}");
+            wrapped += usize::from(as_typed.len() > 1);
+        }
+        keys = 0;
+        app.presses(Key::Enter);
+    }
+    assert!(wrapped > 300, "{wrapped}");
+}

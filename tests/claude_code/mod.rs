@@ -89,27 +89,38 @@ pub fn at_right_edge(cols: usize, text: &str) -> String {
 ///
 /// A library works this out. farcli's own reordering has no part in it.
 pub fn as_drawn(logical: &str) -> String {
-    if logical.is_empty() {
+    // A letter and what rides on it are one thing to the app: it orders
+    // the row as if nothing rode on any letter, and each letter takes its
+    // riders along. (Seen in a live session: a Half-space typed last on a
+    // row drawn left to right stays on the Farsi letter before it.)
+    let mut letters: Vec<String> = Vec::new();
+    for character in logical.chars() {
+        match letters.last_mut() {
+            Some(letter) if takes_no_cell(character) => letter.push(character),
+            _ => letters.push(character.to_string()),
+        }
+    }
+    let alone: String = letters
+        .iter()
+        .filter_map(|letter| letter.chars().next())
+        .collect();
+    if alone.is_empty() {
         return String::new();
     }
-    let info = unicode_bidi::BidiInfo::new(logical, None);
+    let info = unicode_bidi::BidiInfo::new(&alone, None);
     let paragraph = &info.paragraphs[0];
     let (levels, runs) = info.visual_runs(paragraph, paragraph.range.clone());
+    // Where each letter starts in the text the library was given.
+    let starts: Vec<usize> = alone.char_indices().map(|(at, _)| at).collect();
     let mut drawn = String::new();
     for run in runs {
-        if !levels[run.start].is_rtl() {
-            drawn.push_str(&logical[run]);
-            continue;
+        let first = starts.partition_point(|start| *start < run.start);
+        let end = starts.partition_point(|start| *start < run.end);
+        if levels[run.start].is_rtl() {
+            drawn.extend(letters[first..end].iter().rev().map(String::as_str));
+        } else {
+            drawn.extend(letters[first..end].iter().map(String::as_str));
         }
-        // A letter and what rides on it move as one.
-        let mut letters: Vec<String> = Vec::new();
-        for character in logical[run].chars() {
-            match letters.last_mut() {
-                Some(letter) if takes_no_cell(character) => letter.push(character),
-                _ => letters.push(character.to_string()),
-            }
-        }
-        drawn.extend(letters.into_iter().rev());
     }
     drawn
 }
