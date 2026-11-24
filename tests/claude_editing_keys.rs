@@ -1240,3 +1240,35 @@ fn a_letter_typed_beside_a_number_is_put_where_the_cursor_says_not_where_farcli_
         right_to_left(&["سلام دنیا خوبی دوست من", "abcde م7"], 30)
     );
 }
+
+#[test]
+fn the_cursor_goes_by_the_order_the_row_is_shown_in_where_layout_has_rules_of_its_own() {
+    let mut app = ClaudeCode::start(40, 10);
+    // Layout keeps a size in the order it was written in, «33 x 20», where
+    // the app draws `x 20 33`. The arrows follow what the user sees.
+    app.types("اندازه 33 x 20 است");
+    assert_eq!(app.shown(), right_to_left(&["اندازه 33 x 20 است"], 40));
+    let end = left_of(18, 40);
+    assert_eq!(app.cursor(), at(0, end));
+
+    // Right over «است», a space, and then the size from its left end.
+    let mut passed = String::new();
+    let went: Vec<(u16, u16)> = (0..18)
+        .map(|_| {
+            app.presses(Key::Right);
+            passed.push(app.character_under_the_cursor());
+            (app.cursor().row, app.cursor().col)
+        })
+        .collect();
+
+    assert_eq!(went, columns(0, end + 1, 39));
+    let size: String = passed.chars().skip(4).take(7).collect();
+    assert_eq!(size, "33 x 20");
+
+    // A digit typed with the cursor on the `x` goes before it.
+    pressing(&mut app, Key::Left, 10);
+    assert_eq!(app.character_under_the_cursor(), 'x');
+    app.types("7");
+
+    assert_eq!(app.shown(), right_to_left(&["اندازه 33 7x 20 است"], 40));
+}

@@ -476,7 +476,9 @@ impl ClaudeCode {
 
     /// The Paragraph direction of each row the app wrapped the message
     /// onto: that of the line the row is part of, a line being what stands
-    /// between two line breaks.
+    /// between two line breaks. A line takes the direction of its first
+    /// letter, and one with no letter in it is left to right, also when
+    /// its digits are Farsi ones.
     pub fn directions(&self) -> Vec<Direction> {
         let is_break = |character: &String| character == "\n";
         self.wrapped()
@@ -490,7 +492,11 @@ impl ClaudeCode {
                     .iter()
                     .position(is_break)
                     .map_or(self.message.len(), |at| start + at);
-                direction_of(&self.message[line_start..line_end].concat())
+                let line = self.message[line_start..line_end].concat();
+                match line.contains(char::is_alphabetic) {
+                    true => direction_of(&line),
+                    false => Direction::LeftToRight,
+                }
             })
             .collect()
     }

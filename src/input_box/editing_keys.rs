@@ -14,6 +14,7 @@
 //! Nothing here knows about any one Target app.
 
 use crate::layout::{self, Direction};
+use crate::screen::Cell;
 use crate::terminal_input::{Input, Key};
 
 /// One row of a message shown as a text field.
@@ -24,6 +25,25 @@ pub(super) struct FieldRow {
     pub characters: Vec<char>,
     /// The direction the row is laid out in.
     pub direction: Direction,
+}
+
+impl FieldRow {
+    /// The row's places in the order their cells sit on screen, from the
+    /// left. Layout says, which also lays the row out for the Terminal: so
+    /// the cursor goes by what the user sees, whatever rules Layout
+    /// follows.
+    fn on_screen(&self) -> Vec<usize> {
+        let cells: Vec<Cell> = self
+            .characters
+            .iter()
+            .map(|character| Cell {
+                character: *character,
+                ..Cell::blank()
+            })
+            .collect();
+        let line = layout::lay_out_line(&cells, self.direction, cells.len());
+        (0..cells.len()).map(|col| line.logical_col(col)).collect()
+    }
 }
 
 /// A side of the screen.
@@ -61,7 +81,7 @@ pub(super) fn beside(
 ) -> Option<(usize, usize)> {
     let (row, place) = from;
     let here = rows.get(row)?;
-    let order = layout::screen_order(&here.characters, here.direction);
+    let order = here.on_screen();
     let on_screen = order.iter().position(|logical| *logical == place)?;
     let beside = match side {
         Side::Left => on_screen.checked_sub(1),
@@ -76,7 +96,7 @@ pub(super) fn beside(
         false => row.checked_sub(1)?,
     };
     let entered = rows.get(next)?;
-    let order = layout::screen_order(&entered.characters, entered.direction);
+    let order = entered.on_screen();
     let at_its_right_end = (entered.direction == Direction::RightToLeft) == onwards;
     let place = match at_its_right_end {
         true => order.last(),
