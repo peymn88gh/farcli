@@ -27,8 +27,11 @@
 //! kept apart from the message it has, and each frame is matched against
 //! the message as it was after each of them.
 
+mod editing_keys;
+
 use std::ops::Range;
 
+use self::editing_keys::{Arrow, FieldRow, Reach, Side};
 use crate::layout::{self, Bearing, Direction};
 use crate::screen::{Cell, CellWidth, Row};
 use crate::terminal_input::{Input, Key};
@@ -43,6 +46,34 @@ pub(crate) struct InputBox {
     waiting: Vec<Edit>,
     /// What the Terminal sends now is pasted text.
     pasting: bool,
+    /// The rows of the message as farcli last showed them, with the app's
+    /// cursor among them. `None` while the box is shown as the app drew it,
+    /// shows no cursor or is not on screen: then every key is forwarded as
+    /// it was pressed.
+    shown: Option<Vec<ShownRow>>,
+    /// What became of the Left key and of the Right key since each last
+    /// came up.
+    arrows_down: [ArrowDown; 2],
+}
+
+/// One row of the message as farcli showed it.
+#[derive(Debug, Clone, Copy)]
+struct ShownRow {
+    /// The place in the message of the row's first character.
+    start: usize,
+    /// The direction the row was laid out in.
+    direction: Direction,
+}
+
+/// What became of an arrow key each time it went down since it last came
+/// up: a key held down goes down many times and comes up once.
+#[derive(Debug, Clone, Copy, Default)]
+struct ArrowDown {
+    /// It was forwarded as pressed, so the app is still to see it come up.
+    forwarded: bool,
+    /// The app was sent other keys in its place, each going down and
+    /// coming up.
+    replaced: bool,
 }
 
 /// Where the Input box's message is on the screen.
@@ -177,11 +208,155 @@ impl InputBox {
             known: None,
             waiting: Vec::new(),
             pasting: false,
+            shown: None,
+            arrows_down: [ArrowDown::default(); 2],
         }
     }
 
-    /// The Terminal sent `input`, which is on its way to the Target app.
-    pub fn user_typed(&mut self, input: &Input) {
+    /// The Terminal sent `input`. Returns what the Target app is to be sent
+    /// in its place, or `None` when it is to be sent `input` as it came.
+    ///
+    /// Only the Left and Right arrow keys are ever replaced, and only while
+    /// the box is shown as a text field: the user means a side of the
+    /// screen, and the app moves its cursor in Logical order.
+    pub fn user_typed(&mut self, input: &Input) -> Option<Vec<Input>> {
+        let Some(arrow) = Arrow::read(input) else {
+            self.follow(input);
+            return None;
+        };
+        let key = match arrow.side {
+            Side::Left => 0,
+            Side::Right => 1,
+        };
+        if !arrow.down {
+            // The app has seen every key sent in this one's place come up
+            // already.
+            let down = std::mem::take(&mut self.arrows_down[key]);
+            return (down.replaced && !down.forwarded).then(Vec::new);
+        }
+        let mut presses: Vec<Side> = Vec::new();
+        match arrow.reach {
+            Reach::Character => {
+                for _ in 0..arrow.repeats {
+                    let (side, times) = self.keys_towards(arrow.side);
+                    presses.extend(std::iter::repeat_n(side, times));
+                    let edit = match side {
+                        Side::Left => Edit::Back,
+                        Side::Right => Edit::On,
+                    };
+                    self.wait_for(edit, times);
+                }
+            }
+            // The app goes to the start of the word before its cursor or to
+            // the end of the word after it. On a row laid out right to
+            // left, what comes after is on the left.
+            Reach::Word => {
+                let side = match self.direction_at_the_cursor() {
+                    Some(Direction::RightToLeft) => arrow.side.other(),
+                    _ => arrow.side,
+                };
+                presses.extend(std::iter::repeat_n(side, arrow.repeats));
+                self.wait_for(Edit::Other, 1);
+            }
+        }
+        if presses.len() == arrow.repeats && presses.iter().all(|side| *side == arrow.side) {
+            self.arrows_down[key].forwarded = true;
+            return None;
+        }
+        self.arrows_down[key].replaced = true;
+        Some(
+            presses
+                .into_iter()
+                .flat_map(|side| Arrow::press(input, side))
+                .collect(),
+        )
+    }
+
+    /// The app's arrow key, and how many presses of it, that take the
+    /// cursor one place towards `side` on screen.
+    fn keys_towards(&self, side: Side) -> (Side, usize) {
+        let Some(expected) = self.expected() else {
+            return (side, 1);
+        };
+        let Some(from) = expected.cursor() else {
+            // Where the cursor is will not be known until the app draws.
+            // In a message that is right to left on every row, the other
+            // key is the right one almost everywhere.
+            return match expected.one_direction() {
+                Some(Direction::RightToLeft) => (side.other(), 1),
+                _ => (side, 1),
+            };
+        };
+        let rows = expected.field();
+        let place = |(row, on_row): (usize, usize)| expected.rows[row].start + on_row;
+        match editing_keys::beside(&rows, from, side) {
+            Some(to) if place(to) < place(from) => (Side::Left, place(from) - place(to)),
+            Some(to) => (Side::Right, place(to) - place(from)),
+            // At the start or the end of the message: the key that would go
+            // on the same way, which the app does nothing for.
+            None => match editing_keys::leads_onwards(rows[from.0].direction, side) {
+                true => (Side::Right, 1),
+                false => (Side::Left, 1),
+            },
+        }
+    }
+
+    /// The direction of the row the cursor is on, as far as it can be told
+    /// before the app has drawn.
+    fn direction_at_the_cursor(&self) -> Option<Direction> {
+        let expected = self.expected()?;
+        match expected.cursor() {
+            Some((row, _)) => Some(expected.rows[row].direction),
+            None => expected.one_direction(),
+        }
+    }
+
+    /// The message as it will be when the app has handled every key it was
+    /// sent, on the rows farcli last showed it on. `None` while the box is
+    /// not shown as a text field.
+    fn expected(&self) -> Option<Expected> {
+        let mut message = self.known.clone()?;
+        let mut rows = self.shown.clone()?;
+        let mut rows_are_certain = true;
+        for edit in &self.waiting {
+            let (length, cursor) = (message.units.len(), message.cursor);
+            let ends_a_row =
+                |at: usize| !matches!(message.units.get(at), Some(Unit::Character(..)));
+            // A row that begins or ends: which characters the app then
+            // puts on which row is not known until it draws.
+            rows_are_certain &= match edit {
+                Edit::LineBreak | Edit::Other => false,
+                Edit::Backspace => cursor == 0 || !ends_a_row(cursor - 1),
+                Edit::Delete => cursor == length || !ends_a_row(cursor),
+                Edit::Insert(_) | Edit::Back | Edit::On => true,
+            };
+            if !message.apply(*edit) {
+                return None;
+            }
+            // A character typed or deleted is taken to stay on the row the
+            // cursor was on, and the rows after it to hold what they held.
+            match message.units.len().cmp(&length) {
+                std::cmp::Ordering::Greater => rows
+                    .iter_mut()
+                    .filter(|row| row.start > cursor)
+                    .for_each(|row| row.start += 1),
+                std::cmp::Ordering::Less => rows
+                    .iter_mut()
+                    .filter(|row| row.start > message.cursor)
+                    .for_each(|row| row.start -= 1),
+                std::cmp::Ordering::Equal => {}
+            }
+        }
+        Some(Expected {
+            message,
+            rows,
+            rows_are_certain,
+        })
+    }
+
+    /// The Terminal sent `input`, which is on its way to the Target app as
+    /// it came: what it does to the message.
+    fn follow(&mut self, input: &Input) {
         let (edit, times) = match input {
             Input::PasteStarts => {
                 self.pasting = true;
@@ -200,10 +375,8 @@ impl InputBox {
             },
             Input::Other(code) => (
                 match code.as_slice() {
-                    // The arrows and Delete as Terminals send them that do
-                    // not send keys in the Windows form.
-                    b"\x1b[D" => Edit::Back,
-                    b"\x1b[C" => Edit::On,
+                    // Delete as Terminals send it that do not send keys in
+                    // the Windows form.
                     b"\x1b[3~" => Edit::Delete,
                     _ => Edit::Other,
                 },
@@ -211,6 +384,12 @@ impl InputBox {
             ),
             Input::Mouse(_) => (Edit::Other, 1),
         };
+        self.wait_for(edit, times);
+    }
+
+    /// The app was sent a key that does `edit`, `times` over, and has not
+    /// drawn what came of it yet.
+    fn wait_for(&mut self, edit: Edit, times: usize) {
         if self.known.is_none() {
             return;
         }
@@ -253,8 +432,6 @@ impl InputBox {
         const CAPS_LOCK: u16 = 20;
         const ESCAPE: u16 = 27;
         const PAGE_UP_TO_DOWN_ARROW: std::ops::RangeInclusive<u16> = 33..=40;
-        const LEFT: u16 = 37;
-        const RIGHT: u16 = 39;
         const INSERT: u16 = 45;
         const DELETE: u16 = 46;
         const WINDOWS_KEYS: std::ops::RangeInclusive<u16> = 91..=92;
@@ -276,8 +453,6 @@ impl InputBox {
                 return None
             }
             ENTER if self.pasting => Edit::LineBreak,
-            LEFT if held == 0 => Edit::Back,
-            RIGHT if held == 0 => Edit::On,
             BACKSPACE if held == 0 => Edit::Backspace,
             DELETE if held == 0 => Edit::Delete,
             number
@@ -304,6 +479,7 @@ impl InputBox {
     /// when that is not where the app has it. Leaves everything as the app
     /// drew it when the message cannot be told.
     pub fn correct(&mut self, place: Place) -> Option<usize> {
+        self.shown = None;
         let empty = [];
         let screen: Vec<Drawn> = if place.is_empty {
             vec![Drawn::of(&empty)]
@@ -342,6 +518,16 @@ impl InputBox {
             laid_out.push((row, layout::lay_out_line(&cells, directions[row], width)));
         }
         drop(screen);
+        if reading.cursor.is_some() {
+            let rows = reading.rows.iter().zip(&directions);
+            self.shown = Some(
+                rows.map(|(read, direction)| ShownRow {
+                    start: read.start,
+                    direction: *direction,
+                })
+                .collect(),
+            );
+        }
         let mut cursor_col = None;
         for (row, line) in laid_out {
             if let Some((_, col)) = cursor.filter(|(cursor_row, _)| *cursor_row == row) {
@@ -350,6 +536,12 @@ impl InputBox {
             place.rows[row][place.cols.clone()].clone_from_slice(&line.cells);
         }
         cursor_col
+    }
+
+    /// The app has drawn a frame with no Input box that farcli shows as a
+    /// text field. Keys are forwarded as pressed until it draws one.
+    pub fn is_out_of_sight(&mut self) {
+        self.shown = None;
     }
 
     /// Works out which message the screen shows and how each of its rows
@@ -491,6 +683,66 @@ impl InputBox {
             }
         }
         None
+    }
+}
+
+/// The message as it will be when the app has handled every key it was
+/// sent.
+struct Expected {
+    message: Message,
+    /// The rows it is on, as far as that can be told before the app draws.
+    rows: Vec<ShownRow>,
+    /// False when a key waiting begins or ends a row, or does something
+    /// farcli does not follow.
+    rows_are_certain: bool,
+}
+
+impl Expected {
+    /// The row the cursor is on and its place on that row, when both are
+    /// known.
+    fn cursor(&self) -> Option<(usize, usize)> {
+        if !self.rows_are_certain || self.message.cursor_is_a_guess {
+            return None;
+        }
+        let cursor = self.message.cursor;
+        let row = self.rows.iter().rposition(|row| row.start <= cursor)?;
+        Some((row, cursor - self.rows[row].start))
+    }
+
+    /// The direction of every row, when they all have the same.
+    fn one_direction(&self) -> Option<Direction> {
+        let first = self.rows.first()?.direction;
+        self.rows
+            .iter()
+            .all(|row| row.direction == first)
+            .then_some(first)
+    }
+
+    /// The rows as a text field: the places the cursor can be on each.
+    fn field(&self) -> Vec<FieldRow> {
+        let units = &self.message.units;
+        let rows = self.rows.iter().enumerate();
+        rows.map(|(at, row)| {
+            let end = self.rows.get(at + 1).map_or(units.len(), |next| next.start);
+            let end = end.min(units.len());
+            let mut characters: Vec<char> = units[row.start.min(end)..end]
+                .iter()
+                .map(|unit| match unit {
+                    Unit::Character(character, _) => *character,
+                    // The place at the end of a line.
+                    Unit::LineBreak | Unit::RowEnd => ' ',
+                })
+                .collect();
+            if at + 1 == self.rows.len() {
+                // The place after the message's last character.
+                characters.push(' ');
+            }
+            FieldRow {
+                characters,
+                direction: row.direction,
+            }
+        })
+        .collect()
     }
 }
 

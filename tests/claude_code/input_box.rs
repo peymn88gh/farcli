@@ -10,7 +10,13 @@
 //!   is drawn from the third column.
 //! - The app wraps the message four columns short of the Terminal's width,
 //!   at a space, and keeps that space on the end of the row. A word longer
-//!   than a row is cut. A line break starts a new row.
+//!   than a row is cut where the row is full, with no place for the cursor
+//!   between its two parts. A line break starts a new row.
+//! - Left and Right move the cursor by one character of the message in
+//!   Logical order, the space the app wrapped at and a line break each
+//!   counting as one. With Shift held they do the same. With Ctrl or Alt
+//!   held they go to the start of the word before the cursor and to the end
+//!   of the word after it. At either end of the message they do nothing.
 //! - Each row is put into Screen order on its own, by its own first letter
 //!   (`as_drawn`).
 //! - The spaces at the end of a row are not drawn, except up to the app's
@@ -39,6 +45,17 @@ pub enum Key {
     Delete,
     Enter,
     Escape,
+    /// Any other key or report, here the F1 key: the stand-in does nothing
+    /// for it.
+    Other,
+    /// Left with Ctrl held: to the start of the word before the cursor.
+    CtrlLeft,
+    /// Right with Ctrl held: to the end of the word after the cursor.
+    CtrlRight,
+    /// Left and Right with Shift held, which the app takes for the plain
+    /// arrows.
+    ShiftLeft,
+    ShiftRight,
     /// Ctrl and J together: a line break.
     LineBreak,
     /// Ctrl and W together: deletes the word before the cursor.
@@ -53,7 +70,7 @@ impl Key {
     /// What Windows Terminal sends farcli for the key: a code for the key
     /// going down and one for it coming up, with Windows' number for the
     /// key where the key has one.
-    fn sent_by_the_terminal(&self) -> String {
+    pub fn sent_by_the_terminal(&self) -> String {
         let key = |number: u32, scan: u32, character: u32, held: u32| {
             format!(
                 "\x1b[{number};{scan};{character};1;{held};1_\x1b[{number};{scan};{character};0;{held};1_"
@@ -62,6 +79,7 @@ impl Key {
         // A key pressed with Ctrl held: Ctrl goes down before it and comes
         // up after it.
         let with_ctrl = |keys: String| format!("\x1b[17;29;0;1;8;1_{keys}\x1b[17;29;0;0;0;1_");
+        let with_shift = |keys: String| format!("[16;42;0;1;16;1_{keys}[16;42;0;0;0;1_");
         // The keys beside the letters come marked as such.
         const BESIDE: u32 = 256;
         match self {
@@ -85,11 +103,94 @@ impl Key {
             Key::Backspace => key(8, 14, 8, 0),
             Key::Enter => key(13, 28, 13, 0),
             Key::Escape => key(27, 1, 27, 0),
+            Key::Other => key(112, 59, 0, 0),
+            Key::CtrlLeft => with_ctrl(key(37, 75, 0, BESIDE | 8)),
+            Key::CtrlRight => with_ctrl(key(39, 77, 0, BESIDE | 8)),
+            Key::ShiftLeft => with_shift(key(37, 75, 0, BESIDE | 16)),
+            Key::ShiftRight => with_shift(key(39, 77, 0, BESIDE | 16)),
             Key::LineBreak => with_ctrl(key(74, 36, 10, 8)),
             Key::DeleteWord => with_ctrl(key(87, 17, 23, 8)),
             Key::DeleteToEnd => with_ctrl(key(75, 37, 11, 8)),
             Key::Paste(text) => format!("\x1b[200~{text}\x1b[201~"),
         }
+    }
+
+    /// The keys the app reads from what farcli forwarded to it: each key
+    /// going down, in order. A key coming up does nothing in the app.
+    fn read_by_the_app(forwarded: &str) -> Vec<Key> {
+        let mut keys = Vec::new();
+        let mut rest = forwarded;
+        while let Some(character) = rest.chars().next() {
+            if let Some(pasted) = rest.strip_prefix("\x1b[200~") {
+                let (text, after) = pasted.split_once("\x1b[201~").expect("a paste with no end");
+                keys.push(Key::Paste(text.to_string()));
+                rest = after;
+            } else if let Some(code) = rest.strip_prefix("\x1b[") {
+                let end = code
+                    .find(|last: char| ('\x40'..='\x7e').contains(&last))
+                    .expect("a code with no end");
+                let (numbers, last) = code.split_at(end);
+                keys.extend(Key::named_by_code(numbers, &last[..1]));
+                rest = &last[1..];
+            } else {
+                keys.push(match character {
+                    '\u{8}' | '\u{7f}' => Key::Backspace,
+                    '\n' => Key::LineBreak,
+                    character => Key::Character(character),
+                });
+                rest = &rest[character.len_utf8()..];
+            }
+        }
+        keys
+    }
+
+    /// The keys a code names: `ESC [`, then `numbers`, then `last`.
+    fn named_by_code(numbers: &str, last: &str) -> Vec<Key> {
+        if last != "_" {
+            // A key as Terminals send it that do not send keys in the
+            // Windows form.
+            return match (numbers, last) {
+                ("", "D") => vec![Key::Left],
+                ("", "C") => vec![Key::Right],
+                ("1;5", "D") => vec![Key::CtrlLeft],
+                ("1;5", "C") => vec![Key::CtrlRight],
+                ("3", "~") => vec![Key::Delete],
+                _ => vec![Key::Other],
+            };
+        }
+        let fields: Vec<u32> = numbers.split(';').map(|n| n.parse().unwrap()).collect();
+        let [number, _, character, down, held, repeats] = fields[..] else {
+            panic!("a key code names six numbers: {numbers:?}");
+        };
+        const ALT: u32 = 0x1 | 0x2;
+        const CTRL: u32 = 0x4 | 0x8;
+        let key = match number {
+            _ if down == 0 => return Vec::new(),
+            // Shift, Ctrl and Alt do nothing by themselves.
+            16..=18 => return Vec::new(),
+            37 if held & (CTRL | ALT) != 0 => Key::CtrlLeft,
+            39 if held & (CTRL | ALT) != 0 => Key::CtrlRight,
+            74 if held & CTRL != 0 => Key::LineBreak,
+            87 if held & CTRL != 0 => Key::DeleteWord,
+            75 if held & CTRL != 0 => Key::DeleteToEnd,
+            37 => Key::Left,
+            39 => Key::Right,
+            38 => Key::Up,
+            40 => Key::Down,
+            36 => Key::Home,
+            35 => Key::End,
+            46 => Key::Delete,
+            8 => Key::Backspace,
+            13 => Key::Enter,
+            27 => Key::Escape,
+            // A key that types a character: not one pressed with Ctrl or
+            // Alt alone, which is a shortcut of the app's.
+            _ if character >= 32 && (held & CTRL != 0) == (held & ALT != 0) => {
+                Key::Character(char::from_u32(character).unwrap())
+            }
+            _ => Key::Other,
+        };
+        vec![key; repeats as usize]
     }
 }
 
@@ -102,8 +203,9 @@ pub struct ClaudeCode {
     message: Vec<String>,
     /// The place in the message before which the next character goes.
     cursor: usize,
-    /// The keys farcli has forwarded that the app has not handled yet.
-    not_handled: Vec<Key>,
+    /// What the app has not handled yet: for each key the user pressed,
+    /// the keys farcli forwarded for it.
+    not_handled: Vec<Vec<Key>>,
     /// Everything farcli forwarded to the app.
     pub sent_to_app: String,
     /// What the box's first row starts with.
@@ -141,20 +243,21 @@ impl ClaudeCode {
         app
     }
 
-    /// The user presses `key`. farcli forwards it, and the app has not
-    /// handled it yet.
-    pub fn press(&mut self, key: Key) {
-        let sent = key.sent_by_the_terminal();
-        self.press_as(key, &sent);
+    /// The user presses `key`. farcli forwards something for it, which the
+    /// app has not handled yet. Returns what farcli forwarded.
+    pub fn press(&mut self, key: Key) -> String {
+        self.press_as(&key.sent_by_the_terminal())
     }
 
-    /// The user presses `key` in a Terminal that sends `sent` for it.
-    pub fn press_as(&mut self, key: Key, sent: &str) {
+    /// The user presses a key in a Terminal that sends `sent` for it.
+    /// Returns what farcli forwarded to the app.
+    pub fn press_as(&mut self, sent: &str) -> String {
         let reaction = self.run.session.user_typed(sent.as_bytes());
         self.run.terminal.receive(&reaction.for_terminal);
-        self.sent_to_app
-            .push_str(&String::from_utf8(reaction.for_app).unwrap());
-        self.not_handled.push(key);
+        let forwarded = String::from_utf8(reaction.for_app).unwrap();
+        self.sent_to_app.push_str(&forwarded);
+        self.not_handled.push(Key::read_by_the_app(&forwarded));
+        forwarded
     }
 
     /// The keys pressed so far and not handled went to something else the
@@ -184,19 +287,22 @@ impl ClaudeCode {
         }
     }
 
-    /// The app handles the first `keys` of the keys it has not handled, and
-    /// draws.
+    /// The app handles what farcli forwarded for the first `keys` of the
+    /// keys the user pressed that it has not handled, and draws.
     pub fn handles(&mut self, keys: usize) {
-        for key in self.not_handled.drain(..keys).collect::<Vec<_>>() {
+        let forwarded: Vec<Key> = self.not_handled.drain(..keys).flatten().collect();
+        for key in forwarded {
             self.handle(key);
         }
         self.draws();
     }
 
-    /// The user presses `key`, and the app handles it and draws.
-    pub fn presses(&mut self, key: Key) {
-        self.press(key);
+    /// The user presses `key`, and the app handles what farcli forwarded
+    /// for it and draws. Returns what farcli forwarded.
+    pub fn presses(&mut self, key: Key) -> String {
+        let forwarded = self.press(key);
         self.handles(self.not_handled.len());
+        forwarded
     }
 
     /// The user types `text` one key at a time, and the app draws after
@@ -246,8 +352,26 @@ impl ClaudeCode {
                     self.insert(if character == '\r' { '\n' } else { character });
                 }
             }
-            Key::Left => self.cursor = self.cursor.saturating_sub(1),
-            Key::Right => self.cursor = (self.cursor + 1).min(self.message.len()),
+            Key::Left | Key::ShiftLeft => self.cursor = self.cursor.saturating_sub(1),
+            Key::Right | Key::ShiftRight => self.cursor = (self.cursor + 1).min(self.message.len()),
+            Key::CtrlLeft => {
+                // Over the spaces before the cursor, to the start of the
+                // word before them.
+                let is_word = |at: &usize| !matches!(self.message[*at].as_str(), " " | "\n");
+                let word_end = (0..self.cursor).rev().find(is_word).map_or(0, |at| at + 1);
+                self.cursor = (0..word_end)
+                    .rev()
+                    .find(|at| !is_word(at))
+                    .map_or(0, |at| at + 1);
+            }
+            Key::CtrlRight => {
+                // Over the spaces after the cursor, to the end of the word
+                // after them.
+                let end = self.message.len();
+                let is_word = |at: &usize| !matches!(self.message[*at].as_str(), " " | "\n");
+                let word_start = (self.cursor..end).find(is_word).unwrap_or(end);
+                self.cursor = (word_start..end).find(|at| !is_word(at)).unwrap_or(end);
+            }
             Key::Home => self.cursor = line_start,
             Key::End => self.cursor = line_end,
             Key::Backspace => {
@@ -283,7 +407,7 @@ impl ClaudeCode {
                 self.message.clear();
                 self.cursor = 0;
             }
-            Key::Up | Key::Down | Key::Escape => {}
+            Key::Up | Key::Down | Key::Escape | Key::Other => {}
         }
     }
 
@@ -311,9 +435,10 @@ impl ClaudeCode {
                     at = word_end;
                     continue;
                 }
-                if at == row_start {
-                    // A word longer than a row is cut.
-                    at += width;
+                if word_end - at > width {
+                    // A word longer than a row is cut where the row is
+                    // full, and goes on at the start of the next.
+                    at += width - cells;
                 }
                 rows.push((row_start, at, false));
                 (row_start, cells) = (at, 0);

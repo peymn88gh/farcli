@@ -194,10 +194,9 @@ fn backspace_and_delete_leave_the_rest_of_the_message_in_order() {
 
     assert_eq!(app.shown(), right_to_left(&["سلام 33 x 20".to_string()], 40));
 
-    // Back over «20» and the space, and the «x» is under the cursor.
-    for _ in 0..4 {
-        app.presses(Key::Left);
-    }
+    // The cursor is on the empty cell at the left end of the row, and the
+    // «x» is the character on its right: «x 20» reads from the left.
+    app.presses(Key::Right);
     assert_eq!(app.character_under_the_cursor(), 'x');
 
     app.presses(Key::Delete);
@@ -211,8 +210,10 @@ fn the_cursor_is_on_the_right_digit_of_a_number_beside_an_english_word() {
     // The app draws «33 x 20» as it draws «x 20 33» and «33 20 x». Only the
     // keys tell which digit the app's cursor is before.
     app.types("اندازه 33 x 20 است");
-    for _ in 0..11 {
-        app.presses(Key::Left);
+    // From the left end of the row, to the right over «است», a space,
+    // «x 20» and a space.
+    for _ in 0..10 {
+        app.presses(Key::Right);
     }
 
     // Before the first «3» of «33»: it is under the cursor, and the second
@@ -315,11 +316,11 @@ fn the_cursor_on_the_space_the_app_wrapped_at_is_at_the_left_end_of_the_row_abov
     assert_eq!(rows.len(), 2);
     let second = cells(&rows[1]);
 
-    // Back to the start of the second row, and one more: the app's cursor
-    // is on the space it wrapped at, which it draws at the end of the
-    // first row.
+    // To the right end of the second row, where it starts, and one more:
+    // the app's cursor is on the space it wrapped at, which it draws at
+    // the end of the first row.
     for _ in 0..=second {
-        app.presses(Key::Left);
+        app.presses(Key::Right);
     }
 
     assert_eq!(app.shown(), right_to_left(&rows, 30));
@@ -333,12 +334,15 @@ fn characters_that_come_with_no_key_are_followed_like_keys() {
     // A Terminal that does not send keys in the Windows form sends the
     // characters themselves, and its own codes for the arrow keys.
     for character in "سلام worlds".chars() {
-        app.press_as(Key::Character(character), &character.to_string());
+        app.press_as(&character.to_string());
         app.handles(1);
     }
-    app.press_as(Key::Left, "\x1b[D");
-    app.handles(1);
-    app.press_as(Key::Backspace, "\x7f");
+    // To the right over «world», onto the «s».
+    for _ in 0..6 {
+        app.press_as("\x1b[C");
+        app.handles(1);
+    }
+    app.press_as("\x7f");
     app.handles(1);
 
     assert_eq!(app.shown(), right_to_left(&["سلام worls".to_string()], 40));
@@ -454,8 +458,9 @@ fn a_key_that_deletes_the_word_before_the_cursor_leaves_the_rest_in_order() {
 fn a_key_that_deletes_to_the_end_of_the_line_leaves_the_rest_in_order() {
     let mut app = ClaudeCode::start(40, 10);
     app.types("سلام world foo");
-    for _ in 0..4 {
-        app.presses(Key::Left);
+    // To the right over «world», onto the space before «foo».
+    for _ in 0..6 {
+        app.presses(Key::Right);
     }
 
     app.presses(Key::DeleteToEnd);

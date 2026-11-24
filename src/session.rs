@@ -119,11 +119,19 @@ impl Session {
 
     /// Every key, pasted character and mouse report passes through here on
     /// its way to the Target app, one at a time and in the order it came.
+    /// Each is forwarded as it came, but for an arrow key in an Input box
+    /// shown as a text field, where the app is sent the keys that move its
+    /// cursor to the side the user means.
     fn forward(&mut self, inputs: &[Input]) -> Reaction {
         let mut reaction = Reaction::default();
         for input in inputs {
-            self.correction.user_typed(input);
-            input.write_for_app(self.characters_as_keys, &mut reaction.for_app);
+            let in_its_place = self.correction.user_typed(input);
+            for input in in_its_place
+                .as_deref()
+                .unwrap_or(std::slice::from_ref(input))
+            {
+                input.write_for_app(self.characters_as_keys, &mut reaction.for_app);
+            }
         }
         reaction
     }

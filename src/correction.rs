@@ -70,12 +70,15 @@ impl Correction {
         }
     }
 
-    /// The Terminal sent `input`, which is on its way to the Target app:
-    /// what the user typed is one of the two witnesses of what the Input
-    /// box holds.
-    pub fn user_typed(&mut self, input: &Input) {
-        if self.profile.screen() == Screen::ClaudeCode {
-            self.input_box.user_typed(input);
+    /// The Terminal sent `input`: what the user typed is one of the two
+    /// witnesses of what the Input box holds. Returns what the Target app
+    /// is to be sent in its place, or `None` when it is to be sent `input`
+    /// as it came: in an Input box shown as a text field, the arrow keys
+    /// mean a side of the screen.
+    pub fn user_typed(&mut self, input: &Input) -> Option<Vec<Input>> {
+        match self.profile.screen() {
+            Screen::ClaudeCode => self.input_box.user_typed(input),
+            _ => None,
         }
     }
 
@@ -155,6 +158,7 @@ impl Correction {
             .filter(|region| region.rows.start >= leaving)
             .find_map(|region| claude_code::typed_message(rows, region))
         else {
+            self.input_box.is_out_of_sight();
             return;
         };
         let cursor_in_message = cursor.as_ref().and_then(|cursor| {
