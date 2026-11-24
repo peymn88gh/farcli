@@ -283,10 +283,8 @@ impl Walk<'_> {
             return;
         };
         let rows = &self.rows[start..end];
-        if self
-            .input_box_mark
-            .is_some_and(|at| (start..end).contains(&at))
-        {
+        let input_box_mark = self.input_box_mark.filter(|at| (start..end).contains(at));
+        if input_box_mark.is_some() {
             self.state = Above::InputBox;
             self.span_start = start;
             return;
