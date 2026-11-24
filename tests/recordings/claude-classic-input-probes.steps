@@ -4,220 +4,220 @@ quiet:2500
 keys:سلام world
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:hello دنیا
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:سلام دنیا hello
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:سلام (دنیا) خوب
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:سلام [دنیا] <خوب> {بد}
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:سلام (world) خوب
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:hello (سلام) world
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:عدد 123 است
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:۱۲۳ و 456 است
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:اندازه 33 x 20 است
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:از 12 - 34 تا 5/6 و 7:8 و 9.5 و 10%
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:می\u{200c}خواهم بروم
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:سلام علیکم لا اله
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:ab سلام 12
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:ab 12 سلام
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:سلام ab 12
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:12 سلام
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:فایل config.json را باز کن و 123 خط اضافه کن
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:«سلام»، دنیا! آیا
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:آیا این درست است?
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:سلام.
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:hello سلام.
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:.\src\main.rs را ببین
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:- سلام دنیا
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:1. سلام دنیا
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:سَلام دنیا
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:تاریخ 2026-11-23 است
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:نسخه 2.1.322 است
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:۱۰ درصد تخفیف و 5 + 3 = 8
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:سلام 12 34 دنیا
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:the word سلام means hello
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:کلمه hello یعنی سلام
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:سلام A1 و B2
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:قیمت $100 یا 100$ است
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:سلام #1 و user_2
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:x = سلام + 2
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:سلام:  دنیا
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:سلام 12 ab
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:ab سلام 12 cd
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:کتاب\u{200c}ها و خانه\u{200c}ها
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:سلام (۱۲) و [34]
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:نام: علی، سن: 30
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 keys:| نام | تعداد |
 wait:500
 screen:
-hex:15
+press:ctrl+u
 wait:300
 screen:
-hex:03
+press:ctrl+c
 wait:400
-hex:03
+press:ctrl+c
 wait:1500

@@ -23,7 +23,9 @@ pub(crate) struct Region {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Kind {
-    /// One paragraph of Agent output, row by row as the app wrapped it.
+    /// One paragraph of Agent output, row by row as the app wrapped it. A
+    /// line that the writer ended with a line break is a paragraph of its
+    /// own.
     Paragraph(ParagraphStart),
     /// A code block. Code is always left to right and stays as drawn.
     Code,
@@ -44,6 +46,12 @@ pub(crate) enum Kind {
 pub(crate) enum ParagraphStart {
     /// Its first row is the region's first row.
     Here,
+    /// Its first row is the region's first row, and it is one of several
+    /// lines that stand under one another with no empty row between. The
+    /// first of them is above the first row given, where nothing is known
+    /// of them: what would have told that these lines are code may be out
+    /// of sight.
+    HereUnderLinesOutOfSight,
     /// It began above the first row given: its first rows have scrolled
     /// out of sight.
     Above,

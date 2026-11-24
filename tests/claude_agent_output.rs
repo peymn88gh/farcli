@@ -5,8 +5,10 @@
 //! Claude Code on Windows reorders each row of Farsi itself, so every test
 //! here feeds the session what Claude Code draws, never Logical order. The
 //! cases are written by hand in the shape Claude Code 2.1.322 draws a
-//! reply. `claude_reply_recordings.rs` replays the recordings of real
-//! replies.
+//! reply, and are the ones no recording shows. `claude_recordings.rs` and
+//! `claude_lines_and_code.rs` replay the recordings of real sessions: code
+//! blocks in colour, the message sent on its background, and a row with
+//! the fullscreen display's button over it are tested there.
 
 mod claude_code;
 
@@ -218,30 +220,11 @@ fn the_paragraph_row() -> String {
     format!("●{}", at_right_edge(39, &from_the_right("ﺍﯾﻦ ﯾﮏ ﻣﺘﻦ ﺍﺳﺖ")))
 }
 
-#[test]
-fn a_code_block_stays_exactly_as_claude_code_drew_it() {
-    let mut run = Run::start(40, 8);
-
-    // Claude Code gives the words of a code block the Terminal's numbered
-    // colours, and reorders the Farsi in a comment or a string as it does
-    // on any row.
-    run.app_writes(reply(&[&["این یک متن است"]]));
-    run.app_writes(format!(
-        "\x1b[3G\x1b[32m{}\x1b[39m\r\n",
-        as_drawn("# محاسبه مجموع")
-    ));
-    run.app_writes("\x1b[3Gnums = [\x1b[32m1\x1b[39m, \x1b[32m2\x1b[39m]\r\n");
-    run.app_writes(format!(
-        "\x1b[3G\x1b[36mprint\x1b[39m{}\r\n",
-        as_drawn("(\"سلام دنیا\")")
-    ));
-
-    assert_eq!(run.row(0), the_paragraph_row());
-    assert_eq!(run.drawn_row(2), "  عومجم هبساحم #");
-    for row in 2..5 {
-        assert!(run.row_is_as_drawn(row), "row {row}: {}", run.row(row));
-    }
-}
+// The next two tests are of Claude Code run with its colours switched off
+// (`NO_COLOR`), which no recording shows. With colours, it is the colours
+// that tell code: `claude_recordings.rs` and `claude_lines_and_code.rs`
+// replay that, and the third test below shows the turn from one to the
+// other.
 
 #[test]
 fn code_without_colours_is_told_by_its_indentation_and_stays_as_drawn() {
@@ -259,13 +242,14 @@ fn code_without_colours_is_told_by_its_indentation_and_stays_as_drawn() {
 }
 
 #[test]
-fn lines_that_are_not_one_wrapped_text_may_be_code_and_stay_as_drawn() {
+fn with_colours_switched_off_lines_under_one_another_may_be_code_and_stay_as_drawn() {
     let mut run = Run::start(40, 8);
 
-    // Three short rows one under another, with no colour and no
-    // indentation: lines of code, or lines of a poem. A paragraph would
-    // have been wrapped only where the next word did not fit. farcli
-    // cannot tell which this is, so it shows it as the app drew it.
+    // Three short rows one under another, with no indentation, drawn by an
+    // app that draws nothing in colour: lines of code, or lines of a poem.
+    // A paragraph would have been wrapped only where the next word did not
+    // fit. Without the app's colours farcli cannot tell which this is, so
+    // it shows it as the app drew it.
     run.app_writes(reply(&[
         &["این یک متن است"],
         &["# محاسبه مجموع", "total = 5", "# پایان"],
@@ -275,6 +259,37 @@ fn lines_that_are_not_one_wrapped_text_may_be_code_and_stay_as_drawn() {
     for row in 2..5 {
         assert!(run.row_is_as_drawn(row), "row {row}: {}", run.row(row));
     }
+}
+
+#[test]
+fn once_the_app_has_drawn_in_colour_plain_lines_under_one_another_are_lines_of_prose() {
+    let mut run = Run::start(40, 10);
+
+    // The same three rows from an app that draws in colour: its reply mark
+    // is white, as Claude Code's is. Had the rows been code in a language
+    // Claude Code knows, the comments would be green. Each line that holds
+    // Farsi reads as a paragraph of its own, and the line with none stays
+    // where it is.
+    let in_colour = reply(&[
+        &["این یک متن است"],
+        &["# محاسبه مجموع", "total = 5", "# پایان"],
+    ])
+    .replacen('●', "\x1b[38;2;255;255;255m●\x1b[39m", 1);
+    run.app_writes(in_colour);
+
+    assert_eq!(run.row(0), the_paragraph_row());
+    assert_eq!(
+        run.row(2),
+        format!(
+            "  {}",
+            laid_out("# محاسبه مجموع", Direction::RightToLeft, 38)
+        )
+    );
+    assert!(run.row_is_as_drawn(3), "{}", run.row(3));
+    assert_eq!(
+        run.row(4),
+        format!("  {}", laid_out("# پایان", Direction::RightToLeft, 38))
+    );
 }
 
 /// A border of the Input box, as wide as the Terminal.
@@ -346,22 +361,4 @@ fn what_a_tool_gave_back_is_not_agent_output_and_stays_as_drawn() {
         assert!(run.row_is_as_drawn(row), "row {row}: {}", run.row(row));
     }
     assert_eq!(run.row(4), the_paragraph_row());
-}
-
-#[test]
-fn a_row_with_something_laid_over_it_stays_as_drawn_while_the_rows_around_it_are_corrected() {
-    let mut run = Run::start(40, 8);
-
-    // Three rows of Farsi, and over the second one the button Claude
-    // Code's fullscreen display shows while the user has scrolled up.
-    run.app_writes(reply(&[
-        &["این یک متن است"],
-        &["سلام دنیا"],
-        &["این یک متن است"],
-    ]));
-    run.app_writes("\x1b[3;14H\x1b[48;2;55;55;55m Jump to bottom (ctrl+End) \x1b[49m");
-
-    assert_eq!(run.row(0), the_paragraph_row());
-    assert!(run.row_is_as_drawn(2), "{}", run.row(2));
-    assert_eq!(run.row(4), the_paragraph_row().replace('●', " "));
 }

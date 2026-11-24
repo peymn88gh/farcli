@@ -14,7 +14,7 @@ use crate::layout::{self, Direction, Line};
 use crate::painter::Frame;
 use crate::regions::claude_code::Finder;
 use crate::regions::{Kind, ParagraphStart, Region};
-use crate::screen::{Cell, EraseScreen, Row, ScreenChange};
+use crate::screen::{Cell, Color, EraseScreen, Row, ScreenChange};
 use crate::undo::{self, DrawnRow, Start};
 
 /// Turns each frame a Target app drew into the frame farcli shows. It
@@ -26,6 +26,10 @@ pub(crate) struct Correction {
     /// and the finder carries on from them.
     finder: Finder,
     on_alternate_screen: bool,
+    /// The app has drawn something in colour since the session started.
+    /// An app run with colours switched off never does, and then its code
+    /// blocks cannot be told from lines of prose.
+    draws_in_colour: bool,
     /// The direction of the paragraph that the top of the main screen cuts
     /// through, when there is one.
     direction_above: Option<Direction>,
@@ -55,6 +59,7 @@ impl Correction {
             profile,
             finder: Finder::new(),
             on_alternate_screen: false,
+            draws_in_colour: false,
             direction_above: None,
             seen: HashMap::new(),
         }
@@ -115,10 +120,16 @@ impl Correction {
     /// Lays out every paragraph of Agent output in `rows`, of which the
     /// first `leaving` are scrolling off the top of the screen.
     fn paragraphs(&mut self, rows: &mut [Row], leaving: usize) {
+        self.draws_in_colour = self.draws_in_colour
+            || rows.iter().flatten().any(|cell| {
+                !cell.is_left_alone()
+                    && (cell.style.foreground != Color::Default
+                        || cell.style.background != Color::Default)
+            });
         let regions = if self.on_alternate_screen {
-            Finder::knowing_nothing_above().find(rows, 0)
+            Finder::knowing_nothing_above().find(rows, 0, self.draws_in_colour)
         } else {
-            self.finder.find(rows, leaving)
+            self.finder.find(rows, leaving, self.draws_in_colour)
         };
         let mut cut_by_the_top = None;
         for region in &regions {
@@ -166,15 +177,22 @@ impl Correction {
             .clone()
             .map(|row| drawn_row(&rows[row][region.cols.clone()], row < last))
             .collect();
+        let seen_before = || drawn.first().and_then(|row| self.seen.get(&key(row)));
         let start = match start {
             ParagraphStart::Here => Start::Here,
-            ParagraphStart::Above if self.on_alternate_screen => {
-                match drawn.first().and_then(|row| self.seen.get(&key(row))) {
-                    Some(Seen::NotInParagraph) => return None,
-                    Some(Seen::InParagraph(direction)) => Start::Above(Some(*direction)),
-                    None => Start::Above(None),
-                }
-            }
+            // A line under lines that are out of sight was found to be code
+            // if it was found so while they were in sight. Seen for the
+            // first time, with nothing on it or beside it that tells code,
+            // it is taken for the line of prose it looks like.
+            ParagraphStart::HereUnderLinesOutOfSight => match seen_before() {
+                Some(Seen::NotInParagraph) => return None,
+                _ => Start::Here,
+            },
+            ParagraphStart::Above if self.on_alternate_screen => match seen_before() {
+                Some(Seen::NotInParagraph) => return None,
+                Some(Seen::InParagraph(direction)) => Start::Above(Some(*direction)),
+                None => Start::Above(None),
+            },
             ParagraphStart::Above => Start::Above(self.direction_above),
         };
         // The only screen with regions so far is Claude Code's, and Claude

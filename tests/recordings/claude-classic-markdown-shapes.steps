@@ -1,0 +1,8 @@
+# An earlier session started again, so that Claude Code draws its reply again; nothing is typed or sent.
+until:shift+tab
+quiet:2500
+screen:
+press:ctrl+c
+wait:500
+press:ctrl+c
+wait:2500

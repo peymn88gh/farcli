@@ -186,9 +186,10 @@ fn in_the_fullscreen_display_the_end_of_a_paragraph_never_seen_before_is_read_fr
 
 #[test]
 fn in_the_fullscreen_display_lines_left_as_drawn_stay_so_when_only_the_last_of_them_is_in_sight() {
-    // Three lines with no colours that may be code (see the test of that
-    // name in `claude_agent_output.rs`). Scrolled until only the last one
-    // is on screen, it looks like a one-row paragraph.
+    // Three lines from an app with its colours switched off, which may be
+    // code (see `with_colours_switched_off_lines_under_one_another_may_be_
+    // code_and_stay_as_drawn` in `claude_agent_output.rs`). Scrolled until
+    // only the last one is on screen, it looks like a one-row paragraph.
     let lines: Vec<String> = ["# محاسبه مجموع", "total = 5", "# پایان"]
         .iter()
         .map(|line| placed(2, &as_drawn(line)))
@@ -219,12 +220,14 @@ fn in_the_fullscreen_display_lines_left_as_drawn_stay_so_when_only_the_last_of_t
 }
 
 #[test]
-fn colours_and_styles_stay_on_the_letters_they_were_given_to() {
+fn the_colour_of_an_english_word_in_a_farsi_row_stays_on_that_word() {
     let mut run = Run::start(40, 4);
 
     // «فایل config.json را ببین», with the file name in the colour Claude
     // Code gives inline code and the last word bold. Claude Code draws the
     // row from the right, so the bold word is written first, on the left.
+    // (`claude_lines_and_code.rs` replays a recorded row whose styled words
+    // are Farsi. No recording has a coloured English word in a Farsi row.)
     run.app_writes(format!(
         "●\x1b[3G\x1b[1m{}\x1b[22m {} \x1b[38;2;177;185;249mconfig.json\x1b[39m {}\r\n",
         as_drawn("ببین"),
