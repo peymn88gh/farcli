@@ -1,0 +1,6 @@
+// Hand-written for farcli's tests: a user who never chose a font.
+{
+    "terminal.integrated.fontFamily": "Consolas, 'Vazir Code WOL', 'Courier New', monospace",
+    "workbench.colorTheme": "Default Dark Modern",
+    "editor.minimap.enabled": false
+}

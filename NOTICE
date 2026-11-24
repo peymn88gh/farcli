@@ -1,0 +1,14 @@
+farcli carries two things inside its program that are other people's work.
+Neither is covered by farcli's MIT licence (the file LICENSE). Each keeps its
+own terms, which are in the folder named.
+
+Microsoft's hidden terminal: conpty.dll and OpenConsole.exe
+    Copyright (c) Microsoft Corporation. From the Windows Terminal project,
+    package Microsoft.Windows.Console.ConPTY 1.25.261109001, unchanged.
+    farcli unpacks the two files, with Microsoft's licence beside them, to
+    %LOCALAPPDATA%\farcli\hidden-terminal and runs Target apps on them.
+    Terms and where the files came from: assets/hidden-terminal
+
+The font Vazir Code WOL
+    By Saber Rastikerdar. Setup installs it for the current user.
+    Terms and where the file came from: assets/vazir-code

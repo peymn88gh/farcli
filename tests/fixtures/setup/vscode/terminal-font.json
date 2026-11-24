@@ -1,0 +1,6 @@
+{
+	// Indented with tabs, with a comma after the last setting.
+	"editor.fontFamily": "Georgia, serif",
+	"terminal.integrated.fontFamily": "'Cascadia Code', \"Courier New\", monospace", // for the shell
+	"terminal.integrated.fontSize": 13,
+}

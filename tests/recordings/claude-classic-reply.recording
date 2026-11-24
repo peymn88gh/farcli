@@ -1,0 +1,133 @@
+farcli recording 1
+app: claude
+app-version: 2.1.322 (Claude Code)
+system: Windows native
+size: 100x30
+cursor: 0,0
+command: claude --safe-mode --model haiku
+windows-version: Microsoft Windows [Version 10.0.22631.6199]
+hidden-terminal: Microsoft.Windows.Console.ConPTY 1.25.261109001, shipped with farcli
+display-mode: classic (CLAUDE_CODE_NO_FLICKER=0)
+holds: one pasted Farsi message and the reply: prose, a mixed sentence, a nested list, a numbered list, a table with number pairs, code that starts with a Farsi comment, a poem of three lines
+arguments: --safe-mode keeps the user's own settings, plugins and servers out; --model haiku keeps the reply cheap
+environment: as PowerShell in Windows Terminal has it: only the variables Windows keeps for the machine and the user, plus WT_SESSION and WT_PROFILE_ID; no NO_COLOR, TERM, COLORTERM or TERM_PROGRAM
+terminal: the stand-in Terminal says where its cursor is and what kind of terminal it is, and gives Windows Terminal's default colours (text cccccc, background 0c0c0c) when asked for them
+made-with: examples/hidden_terminal_probe played claude-classic-reply.steps into farcli on a hidden terminal, with nobody at the keyboard
+
+67 app \e[1t
+68 app \e[6n\e[c\e[?1004h\e[?9001h
+69 app \e[1;1H
+694 app \e]0;claude\e\\
+1447 app \e7\e[r\e8\e[?25h
+1973 app \e[?25l
+1975 app \e[?2004h\e[?2031h\e[?1004h
+1976 app \e[?9001l\e[?9001h
+1977 app \e[<u\e[>5u\e[>4;2m
+1980 app \e]0;✳ Claude Code\e\\
+2133 app \e[?2026h\e[38;2;215;119;87m ▐\e[48;2;0;0;0m▛███▛█\e[12G\e[39m\e[49m\e[1mClaude\e[19GCode\e[24G\e[22m\e[38;2;153;153;153mv2.1.322\e[39m\r\n\e[38;2;215;119;87m▝▜\e[48;2;0;0;0m█████\e[49m█▀\e[12G\e[38;2;153;153;153mHaiku\e[18G5.5\e[22G·\e[24GClaude\e[31GPlan \e[39m\r\n\e[38;2;215;119;87m ▝▝\e[7G▝▝\e[12G\e[38;2;153;153;153mC:\\Users\\Public\\rtl-demo\e[39m\r\n\r\n\e[38;2;255;193;7m⚠\e[3GSafe\e[8Gmode:\e[14Gall\e[18Gcustomizations\e[33Gare\e[37Gdisabled\e[46G(CLAUDE.md,\e[58Gskills,\e[66Gplugins,\e[75Ghooks,\e[82GMCP,\e[87Gagents,\e[95Gand\e[39m\r\n\e[3G\e[38;2;255;193;7mmore)\e[39m\r\n\e[3G\e[38;2;153;153;153mRestart\e[11Gwithout\e[19G--safe-mode\e[31Gto\e[34Gre-enable\e[39m\r\n\r\n\e[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────\e[39m\r\n❯ \e[2mTry\e[7G"fix\e[12Glint\e[17Gerrors"\e[22m\r\n\e[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────\e[39m\r\n\e[3G\e[38;2;255;193;7m⏵⏵\e[6Gauto\e[11Gmode\e[16Gon\e[38;2;153;153;153m (shift+tab\e[30Gto\e[33Gcycle)\e[40G·\e[42G←\e[44Gfor\e[48Gagents\e[81G◐\e[83Gmedium\e[90G·\e[92G/effort\e[39m\r\n\e[2C\e[3A\e[?25h\e[?2026l
+2741 app \e[>0q
+2750 app \e[?u
+2755 app \e]7501;?\x07
+2757 app \e[c
+2757 keys \e[?61c
+5266 keys \e[200~
+5266 keys لطفا خیلی کوتاه و بدون استفاده از ابزار جواب بده و فقط همین شش بخش را بنویس: ۱. یک پاراگراف سه\u{200c}جمله\u{200c}ای فارسی درباره\u{200c}ی پاییز. ۲. یک پاراگراف دوجمله\u{200c}ای که در آن فارسی با کلمه\u{200c}های انگلیسی، نام فایل config.json، یک دستور مثل git status و عددهایی مثل 123 و 33 x
+5267 keys  20 (داخل پرانتز) مخلوط شده باشد. ۳. یک فهرست نشانه\u{200c}دار سه\u{200c}موردی که مورد دوم دو زیرمورد دارد، و بعد یک فهرست شماره\u{200c}دار دوموردی. ۴. یک جدول با سه ستون (نام، توضیح، اندازه) و سه ردیف که اندازه\u{200c}ها به شکل 33 x 20 باشند. ۵. یک بلوک کد Python سه\u{200c}خطی که خط اولش ک
+5267 keys امنت فارسی و خط آخرش print باشد. ۶. یک شعر سه\u{200c}مصرعی کوتاه، هر مصرع در یک خط و بدون خط خالی بین مصرع\u{200c}ها.\e[201~
+5371 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[2C\e[3Aفارگاراپ کی .۱ :سیونب\e[25Gار\e[28Gشخب\e[32Gشش\e[35Gنیمه\e[40Gطقف\e[44Gو\e[46Gهدب\e[50Gباوج\e[55Gرازبا\e[61Gزا\e[64Gهدافتسا\e[72Gنودب\e[77Gو\e[79Gهاتوک\e[85Gیلیخ\e[90Gافطل\r\e[1B  مان ،یسیلگنا یاهه\u{200c}ملک اب یسراف نآ رد هک یاه\u{200c}لمجود فارگاراپ کی .۲ .زییاپ یه\u{200c}رابرد یسراف یاه\u{200c}لمجه\u{200c}س\e[K\r\e[2C\e[1Bهدش طولخم )زتنارپ لخاد( x 20 33 و 123 لثم ییاهددع و\e[55Ggit\e[59Gstatus\e[66Gلثم\e[70Gروتسد\e[76Gکی\e[79G،config.json لیاف\e[K\r\n\e[3G.یدرومود\e[12Gراده\u{200c}رامش\e[21Gتسرهف\e[27Gکی\e[30Gدعب\e[34Gو\e[36G،دراد\e[42Gدرومریز\e[50Gود\e[53Gمود\e[57Gدروم\e[62Gهک\e[65Gیدرومه\u{200c}س\e[73Gراده\u{200c}ناشن\e[82Gتسرهف\e[88Gکی\e[91G.۳\e[94G.دشاب\r\n\e[3Gکی\e[6G.۵\e[9G.دنشاب\e[16Gx\e[18G20\e[21G33\e[24Gلکش\e[28Gهب\e[31Gاهه\u{200c}زادنا\e[40Gهک\e[43Gفیدر\e[48Gهس\e[51Gو\e[53G)هزادنا\e[61G،حیضوت\e[68G،مان(\e[74Gنوتس\e[79Gهس\e[82Gاب\e[85Gلودج\e[90Gکی\e[93G.۴\r\n\e[3Gره\e[6G،هاتوک\e[13Gیعرصمه\u{200c}س\e[21Gرعش\e[25Gکی\e[28G.۶\e[31G.دشاب\e[37Gprint\e[43Gشرخآ\e[48Gطخ\e[51Gو\e[53Gیسراف\e[59Gتنماک\e[65Gشلوا\e[70Gطخ\e[73Gهک\e[76Gیطخه\u{200c}س\e[82GPython\e[89Gدک\e[92Gکولب\r\n\e[4G.اهع\u{200c}رصم\e[12Gنیب\e[16Gیلاخ\e[21Gطخ\e[24Gنودب\e[29Gو\e[31Gطخ\e[34Gکی\e[37Gرد\e[40Gعرصم\r\n\e[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────\e[39m\r\n\e[3G\e[38;2;255;193;7m⏵⏵\e[6Gauto\e[11Gmode\e[16Gon\e[38;2;153;153;153m (shift+tab\e[30Gto\e[33Gcycle)\e[81G◐\e[83Gmedium\e[90G·\e[92G/effort\e[39m\r\n\e[42C\e[3A\e[?25h\e[?2026l
+7398 keys \e[13;28;13;1;0;1_\e[13;28;13;0;0;1_
+7961 app \e]0;◐ Claude Code\e\\
+8045 app \e[?2026h\e[?25l\e[42D\e[3B\r\e[10A\e[48;2;55;55;55m\e[38;2;153;153;153m❯ \e[38;2;255;255;255m فارگاراپ کی .۱ :سیونب ار شخب شش نیمه طقف و هدب باوج رازبا زا هدافتسا نودب و هاتوک یلیخ افطل\e[39m      \r\e[1B  \e[38;2;255;255;255mلیاف مان ،یسیلگنا یاهه\u{200c}ملک اب یسراف نآ رد هک یاه\u{200c}لمجود فارگاراپ کی .۲ .زییاپ یه\u{200c}رابرد یسراف یاه\u{200c}لمجه\u{200c}س\e[39m \r\e[1B  \e[38;2;255;255;255mconfig.json، لثم روتسد کی git status 33 و 123 لثم ییاهددع و x 20 (زتنارپ لخاد) دشاب هدش طولخم. \e[39m   \r\e[1B  \e[38;2;255;255;255m کی .۴ .یدرومود راده\u{200c}رامش تسرهف کی دعب و ،دراد درومریز ود مود دروم هک یدرومه\u{200c}س راده\u{200c}ناشن تسرهف کی .۳\e[39m \r\e[1B  \e[38;2;255;255;255m دک کولب کی .۵ .دنشاب x 20 33 لکش هب اهه\u{200c}زادنا هک فیدر هس و )هزادنا ،حیضوت ،مان( نوتس هس اب لودج\e[39m   \r\e[1B  \e[38;2;255;255;255mPython شرخآ طخ و یسراف تنماک شلوا طخ هک یطخه\u{200c}س print کی رد عرصم ره ،هاتوک یعرصمه\u{200c}س رعش کی .۶ .دشاب \e[39m \r\e[1B  \e[38;2;255;255;255m.اهع\u{200c}رصم نیب یلاخ طخ نودب و طخ\e[39m                                                                     \r\e[3C\e[1B\e[49m\e[K\r\e[1B\e[38;2;215;119;87m·\e[39m \e[38;2;215;119;87mCaramelizing… \e[39m\e[K\r\e[2C\e[1B\e[K\r\n\e[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────\e[39m\r\n\e[38;2;153;153;153m❯ \e[39m\r\n\e[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────\e[39m\r\n\e[3G\e[38;2;255;193;7m⏵⏵\e[6Gauto\e[11Gmode\e[16Gon\e[38;2;153;153;153m (shift+tab\e[30Gto\e[33Gcycle)\e[40G·\e[42Gesc\e[46Gto\e[49Ginterrupt\e[59G·\e[61G←\e[63Gfor\e[67Gagents\e[81G◐\e[83Gmedium\e[90G·\e[92G/effort\e[39m\r\n\e[2C\e[3A\e[?25h\e[?2026l
+8101 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✢\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+8198 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m*\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+8364 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✶\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+8493 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✻\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+8601 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✽\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+8918 app \e]0;◑ Claude Code\e\\
+8983 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[2C\e[6A\e[38;2;215;119;87mDelib\e[9Grat\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+8998 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[16C\e[6A\e[38;2;153;153;153m(1s · \e[38;2;177;177;177mthinking\e[38;2;153;153;153m)\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+9044 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✻\e[23G\e[38;2;181;181;181mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+9250 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✶\e[23G\e[38;2;185;185;185mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+9267 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m*\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+9497 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✢\e[18G\e[38;2;153;153;153m2\e[23G\e[38;2;181;181;181mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+9619 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m·\e[23G\e[38;2;177;177;177mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+9671 app \e]0;◑ نمونه متن ترکیبی فارسی، config.json و جدول\e\\
+9711 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[22C\e[6A\e[38;2;173;173;173mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+9834 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[22C\e[6A\e[38;2;165;165;165mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+9877 app \e]0;◐ نمونه متن ترکیبی فارسی، config.json و جدول\e\\
+9930 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[22C\e[6A\e[38;2;161;161;161mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+10053 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✢\e[23G\e[38;2;157;157;157mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+10188 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m*\e[23G\e[38;2;153;153;153mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+10277 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✶\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+10379 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[14C\e[6A\e[38;2;235;159;127m…\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+10495 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✻\e[18G\e[38;2;153;153;153m3\e[23G\e[38;2;157;157;157mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+10612 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✽\e[14G\e[38;2;235;159;127mg\e[23G\e[38;2;161;161;161mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+10727 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[22C\e[6A\e[38;2;165;165;165mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+10827 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[12C\e[6A\e[38;2;235;159;127mn\e[23G\e[38;2;173;173;173mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+10837 app \e]0;◑ نمونه متن ترکیبی فارسی، config.json و جدول\e\\
+10948 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[22C\e[6A\e[38;2;177;177;177mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+11062 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✻\e[12G\e[38;2;235;159;127mi\e[15G\e[38;2;215;119;87m…\e[23G\e[38;2;181;181;181mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+11169 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✶\e[11G\e[38;2;235;159;127mt\e[14G\e[38;2;215;119;87mg\e[23G\e[38;2;185;185;185mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+11285 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m*\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+11385 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✢\e[10G\e[38;2;235;159;127ma\e[13G\e[38;2;215;119;87mn\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+11503 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[17C\e[6A\e[38;2;153;153;153m4\e[23G\e[38;2;181;181;181mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+11622 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m·\e[9G\e[38;2;235;159;127mr\e[12G\e[38;2;215;119;87mi\e[23G\e[38;2;177;177;177mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+11721 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[22C\e[6A\e[38;2;169;169;169mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+11797 app \e]0;◐ نمونه متن ترکیبی فارسی، config.json و جدول\e\\
+11837 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[7C\e[6A\e[38;2;235;159;127me\e[11G\e[38;2;215;119;87mt\e[23G\e[38;2;165;165;165mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+11957 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[22C\e[6A\e[38;2;161;161;161mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+12019 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[80C\e[1A\e[K\r\n\e[2C\e[3A\e[?25h\e[?2026l
+12058 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✢\e[7G\e[38;2;235;159;127mb\e[10G\e[38;2;215;119;87ma\e[23G\e[38;2;157;157;157mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+12081 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[57C\e[1A\e[K\r\n\e[2C\e[3A\e[?25h\e[?2026l
+12191 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m*\e[6G\e[38;2;235;159;127mi\e[9G\e[38;2;215;119;87mr\e[23G\e[38;2;153;153;153mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+12290 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✶\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+12398 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✻\e[5G\e[38;2;235;159;127ml\e[8G\e[38;2;215;119;87me\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+12519 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[17C\e[6A\e[38;2;153;153;153m5\e[23G\e[38;2;157;157;157mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+12625 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✽\e[4G\e[38;2;235;159;127me\e[7G\e[38;2;215;119;87mb\e[23G\e[38;2;161;161;161mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+12744 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[22C\e[6A\e[38;2;169;169;169mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+12759 app \e]0;◑ نمونه متن ترکیبی فارسی، config.json و جدول\e\\
+12858 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[2C\e[6A\e[38;2;235;159;127mD\e[6G\e[38;2;215;119;87mi\e[23G\e[38;2;173;173;173mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+12961 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[4C\e[6A\e[38;2;215;119;87ml\e[23G\e[38;2;177;177;177mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+13067 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[58C\e[1A\e[38;2;255;107;128m✘ Auto-update failed · Run \e[1mclaude doctor\e[22m\e[39m\r\n\e[2C\e[3A\e[?25h\e[?2026l
+13078 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✻\e[23G\e[38;2;181;181;181mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+13207 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✶\e[4Ge\e[23G\e[38;2;185;185;185mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+13297 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m*\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+13404 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✢\e[3GD\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+13524 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[17C\e[6A\e[38;2;153;153;153m6\e[23G\e[38;2;181;181;181mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+13632 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m·\e[23G\e[38;2;177;177;177mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+13718 app \e]0;◐ نمونه متن ترکیبی فارسی، config.json و جدول\e\\
+13740 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[22C\e[6A\e[38;2;169;169;169mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+13864 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[22C\e[6A\e[38;2;165;165;165mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+13971 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✢\e[23G\e[38;2;161;161;161mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+14086 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[22C\e[6A\e[38;2;157;157;157mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+14187 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m*\e[23G\e[38;2;153;153;153mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+14307 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✶\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+14408 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✻\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+14525 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[17C\e[6A\e[38;2;153;153;153m7\e[23G\e[38;2;157;157;157mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+14655 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✽\e[23G\e[38;2;165;165;165mthinking\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+14707 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[22C\e[6A\e[38;2;153;153;153m↓\e[39m \e[38;2;153;153;153m1.0k tokens · \e[38;2;165;165;165mthinking\e[38;2;153;153;153m)\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+14713 app \e]0;◑ نمونه متن ترکیبی فارسی، config.json و جدول\e\\
+14731 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[38C\e[6A\e[38;2;153;153;153mthought for 6s)\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+14981 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✻\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+15202 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✶\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+15315 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m*\e[27G\e[38;2;153;153;153m1\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+15434 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✢\e[18G\e[38;2;153;153;153m8\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+15640 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m·\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+15681 app \e]0;◐ نمونه متن ترکیبی فارسی، config.json و جدول\e\\
+15988 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✢\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+16218 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m*\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+16326 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;215;119;87m✶\e[27G\e[38;2;153;153;153m2\e[39m\r\n\n\n\n\n\n\e[2C\e[3A\e[?25h\e[?2026l
+16564 app \e]0;✳ نمونه متن ترکیبی فارسی، config.json و جدول\e\\
+16591 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[6A\e[38;2;255;255;255m●\e[3G\e[39m لصف نیا رد .دنوشی\u{200c}م رته\u{200c}اتوک اهزور و دوشی\u{200c}م رتک\u{200c}نخ اوه\e[55G.دنکی\u{200c}م\e[62Gضوع\e[66Gگنر\e[70Gناتخرد\e[77Gگرب\e[81Gهک\e[84Gتسا\e[88Gیلصف\e[93Gزییاپ\e[99G\e[1m.۱\r\e[2C\e[1B\e[22m.دسری\u{200c}م\e[10Gماشم\e[15Gهب\e[18Gرتشیب\e[24Gهزات\e[29Gنان\e[33Gو\e[35Gناراب\e[41Gیوب\r\e[1B\e[K\r\e[1B  نک\e[6Gارجا\e[11Gار\e[14Ggit\e[18Gstatus\e[25Gروتسد\e[31Gدعب\e[35G،هدب\e[40Gرییغت\e[46G123\e[50Gهب\e[53Gار\e[56Gtimeout\e[64Gرادقم\e[70Gو\e[72Gنک\e[75Gزاب\e[79Gار\e[82Gconfig.json\e[94Gلیاف\e[99G\e[1m.۲\r\e[1B\e[22m  .دشاب )x 20 33( دیاب مه شیامنش\u{200c}یپ ریوصت داعبا .ینیبب ار تارییغت ات\e[K\r\e[2C\e[1B\e[K\r\n\e[3G\e[1m۳.\e[22m\r\n\r\n\e[3G-\e[5Gلوا\e[9Gدروم\r\n\e[3G-\e[5Gمود\e[9Gدروم\r\n\e[5G-\e[7Gفلا\e[11Gدرومریز\r\n\e[5G-\e[7Gب\e[9Gدرومریز\r\n\e[3G-\e[5Gموس\e[9Gدروم\r\n\r\n\e[3G1.\e[6Gلوا\e[10Gمدق\r\n\e[3G2.\e[6Gمود\e[10Gمدق\r\n\r\n\e[3G\e[1m۴.\e[22m\r\n\r\n\e[3G┌───────┬─────────────────┬─────────┐\r\n\e[3G│\e[6Gهزادنا\e[13G│\e[20Gحیضوت\e[31G│\e[34Gمان\e[39G│\r\n\e[3G├───────┼─────────────────┼─────────┤\r\n\e[3G│\e[5Gx\e[7G20\e[10G33\e[13G│\e[15Gتیاس\e[20Gیلصا\e[25Gریوصت\e[31G│\e[34Gوگول\e[39G│\r\n\e[3G├───────┼─────────────────┼─────────┤\r\n\e[3G│\e[5Gx\e[7G20\e[10G10\e[13G│\e[16Gالاب\e[21Gیونم\e[26Gدامن\e[31G│\e[33Gنوکیآ\e[39G│\r\n\e[3G├───────┼─────────────────┼─────────┤\r\n\e[3G│\e[5Gx\e[7G40\e[10G33\e[13G│\e[16Gیتاغیلبت\e[25Gریوصت\e[31G│\e[35Gرنب\e[39G│\r\n\e[3G└───────┴─────────────────┴─────────┘\r\n\r\n\e[3G\e[1m۵.\e[22m\r\n\r\n\e[3G\e[32mدنکی\u{200c}م\e[9Gپاچ\e[13Gار\e[16Gددع\e[20Gکی\e[23Gهمانرب\e[30Gنیا\e[34G#\e[39m\r\n\e[3Gx\e[5G=\e[7G\e[32m123\e[39m\r\n\e[3G\e[36mprint\e[39m(x)\r\n\r\n\e[3G\e[1m۶.\e[22m\r\n\r\n\e[3Gتسا\e[7Gمارآ\e[12Gو\e[14Gریگلد\e[20Gیزییاپ\e[27Gنامسآ\r\n\e[3Gدننزی\u{200c}م\e[10Gمدق\e[14Gکاخ\e[18Gیور\e[22Gاهگ\u{200c}رب\r\n\e[3Gدناوخی\u{200c}م\e[11Gار\e[14Gهتفر\e[19Gیاهزور\e[26Gیه\u{200c}صق\e[31G،هتسهآ\e[38G،داب\e[43Gو\r\n\r\n\e[38;2;153;153;153m✻\e[3GSautéed\e[11Gfor\e[15G9s\e[18G·\e[20Gdone\e[25G3:45\e[30GAM\e[39m\r\n\r\n\e[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────\e[39m\r\n❯ \r\n\e[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────\e[39m\r\n\e[3G\e[38;2;255;193;7m⏵⏵\e[6Gauto\e[11Gmode\e[16Gon\e[38;2;153;153;153m (shift+tab\e[30Gto\e[33Gcycle)\e[59G\e[38;2;255;107;128m✘\e[61GAuto-update\e[73Gfailed\e[80G·\e[82GRun\e[86G\e[1mclaude\e[93Gdoctor\e[22m\e[39m\r\n\e[2C\e[3A\e[?25h\e[?2026l
+21609 keys \e[67;0;3;1;8;1_
+21609 keys \e[67;0;3;0;8;1_
+21612 app \e(B\x0f\e[?2004h\e[<u\e[>5u\e[>4;2m
+21627 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[2C\e[1A\e[38;2;153;153;153mPress Ctrl-C again to exit\e[39m          \r\n\e[2C\e[3A\e[?25h\e[?2026l
+22120 keys \e[67;0;3;1;8;1_
+22120 keys \e[67;0;3;0;8;1_
+22129 app \e[?1006l\e[?1003l\e[?1002l\e[?1000l
+22131 app \e[2D\e[3B
+22135 app \e[?1004l\e[?1004h\e[>4m\e[<u\e[?2031l\e[?2004l\e(B\x0f\e[?1016l\e[?1006l\e[?1003l\e[?1002l\e[?1000l\e[?25h\e7\e[r\e8
+22141 app \e]0;\e\\
+22149 app \e[2m\e[22m\r\n\e[2mResume this session with:\e[22m\r\n\e[2mclaude --safe-mode --model haiku --resume 00000000-0000-0000-0000-000000000000\e[22m\r\n\e[2m\e[22m
+22878 app \e[?1004l\e[?9001l

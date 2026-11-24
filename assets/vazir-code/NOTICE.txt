@@ -1,0 +1,24 @@
+Vazir Code
+==========
+
+Vazir-Code-WOL.ttf is the font "Vazir Code WOL" (Vazir Code without Latin
+letters), version 1.1.2, by Saber Rastikerdar. farcli carries this file inside
+its program and installs it for the current user when Setup runs.
+
+The file is unchanged from the upstream release:
+
+    https://github.com/rastikerdar/vazir-code-font/releases/tag/v1.1.2
+    vazir-code-font-v1.1.2.zip, Without-Latin/Vazir-Code-WOL.ttf
+    SHA-256 1bf88f7beb8e1093d029ecf5732da3d1bdf1ea154924429344a89ae04490fb55
+
+The font is not covered by farcli's MIT licence. It keeps its own terms:
+
+- LICENSE in this folder is the licence file of the upstream release: the
+  Bitstream Vera Fonts copyright and licence, with the DejaVu changes and the
+  changes by Saber Rastikerdar in the public domain.
+- The font file's own copyright notice says that glyphs and data imported from
+  the Inconsolata font are under the SIL Open Font License. That licence, with
+  Inconsolata's copyright notice, is in OFL-Inconsolata.txt.
+
+The font file carries its copyright notice and the Bitstream Vera licence text
+itself, so they travel with every copy Setup installs.

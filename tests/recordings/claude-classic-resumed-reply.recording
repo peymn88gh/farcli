@@ -1,0 +1,43 @@
+farcli recording 1
+app: claude
+app-version: 2.1.322 (Claude Code)
+system: Windows native
+size: 100x30
+cursor: 0,0
+command: claude --safe-mode --model haiku --resume 00000000-0000-0000-0000-000000000000
+windows-version: Microsoft Windows [Version 10.0.22631.6199]
+hidden-terminal: Microsoft.Windows.Console.ConPTY 1.25.261109001, shipped with farcli
+display-mode: classic (CLAUDE_CODE_NO_FLICKER=0)
+holds: an earlier session started again with --resume, so that Claude Code draws its message and reply again: prose with a wrapped row that begins with an English word, lists, a table, code; nothing is typed or sent
+arguments: --safe-mode keeps the user's own settings, plugins and servers out; --model haiku keeps the reply cheap; DISABLE_NON_ESSENTIAL_MODEL_CALLS=1 was set as well
+environment: as PowerShell in Windows Terminal has it: only the variables Windows keeps for the machine and the user, plus WT_SESSION and WT_PROFILE_ID; no NO_COLOR, TERM, COLORTERM or TERM_PROGRAM
+terminal: the stand-in Terminal says where its cursor is and what kind of terminal it is, and gives Windows Terminal's default colours (text cccccc, background 0c0c0c) when asked for them
+made-with: examples/hidden_terminal_probe played claude-classic-resumed-reply.steps into farcli on a hidden terminal, with nobody at the keyboard
+
+22 app \e[1t
+23 app \e[6n\e[c\e[?1004h\e[?9001h
+23 app \e[1;1H
+204 app \e]0;claude\e\\
+358 app \e7\e[r\e8\e[?25h
+578 app \e[?25l
+578 app \e[?2004h\e[?2031h\e[?1004h
+578 app \e[?9001l\e[?9001h
+579 app \e[<u\e[>5u\e[>4;2m
+579 app \e]0;✳ تست قالب\u{200c}بندی متن فارسی و کد\e\\
+619 app \e[?2026h\e[38;2;215;119;87m ▐\e[48;2;0;0;0m▛███▛█\e[12G\e[39m\e[49m\e[1mClaude\e[19GCode\e[24G\e[22m\e[38;2;153;153;153mv2.1.322\e[39m\r\n\e[38;2;215;119;87m▝▜\e[48;2;0;0;0m█████\e[49m█▀\e[12G\e[38;2;153;153;153mHaiku\e[18G5.5\e[22G·\e[24GClaude\e[31GPlan \e[39m\r\n\e[38;2;215;119;87m ▝▝\e[7G▝▝\e[12G\e[38;2;153;153;153mC:\\Users\\Public\\rtl-demo\e[39m\r\n\r\n\e[38;2;255;193;7m⚠\e[3GSafe\e[8Gmode:\e[14Gall\e[18Gcustomizations\e[33Gare\e[37Gdisabled\e[46G(CLAUDE.md,\e[58Gskills,\e[66Gplugins,\e[75Ghooks,\e[82GMCP,\e[87Gagents,\e[95Gand\e[39m\r\n\e[3G\e[38;2;255;193;7mmore)\e[39m\r\n\e[3G\e[38;2;153;153;153mRestart\e[11Gwithout\e[19G--safe-mode\e[31Gto\e[34Gre-enable\e[39m\r\n\r\n\e[48;2;55;55;55m\e[38;2;153;153;153m❯ \e[38;2;255;255;255m فارگاراپ کی .۱ :سیونب ار شخب جنپ نیمه طقف و هدب باوج رازبا زا هدافتسا نودب و هاتوک یلیخ افطل\e[39m     \e[49m\r\n\e[48;2;55;55;55m  \e[38;2;255;255;255mلیاف مان ،یسیلگنا یاهه\u{200c}ملک اب یسراف نآ رد هک یاه\u{200c}لمجود فارگاراپ کی .۲ .زییاپ یه\u{200c}رابرد یسراف یاه\u{200c}لمجه\u{200c}س\e[39m \e[49m\r\n\e[48;2;55;55;55m  \e[38;2;255;255;255mconfig.json، لثم روتسد کی git status 33 و 123 لثم ییاهددع و x 20 (زتنارپ لخاد) دشاب هدش طولخم. \e[39m   \e[49m\r\n\e[48;2;55;55;55m  \e[38;2;255;255;255m کی .۴ .یدرومود راده\u{200c}رامش تسرهف کی دعب و ،دراد درومریز ود مود دروم هک یدرومه\u{200c}س راده\u{200c}ناشن تسرهف کی .۳\e[39m \e[49m\r\n\e[48;2;55;55;55m  \e[38;2;255;255;255m.یطخه\u{200c}س Python دک کولب کی .۵ .فیدر هس و )دادعت ،حیضوت ،مان( نوتس هس اب لودج\e[39m                        \e[49m\r\n\r\n\e[38;2;255;255;255m●\e[4G\e[39mاهرصع\e[10Gو\e[12Gدنوشی\u{200c}م\e[19Gرته\u{200c}اتوک\e[27Gاهزور\e[33G.دوشی\u{200c}م\e[40Gکنخ\e[44Gمکم\u{200c}ک\e[49Gاوه\e[53Gو\e[55Gدنکی\u{200c}م\e[61Gضوع\e[65Gگنر\e[69Gناتخرد\e[76Gگرب\e[80Gهک\e[83Gتسا\e[87Gیلصف\e[92Gزییاپ\r\n\e[3G.دنراد\e[10Gتسود\e[15Gار\e[18Gلصف\e[22Gنیا\e[26Gمیالم\e[32Gرون\e[36Gو\e[38Gشمارآ\e[44Gمدرم\e[49Gزا\e[52Gیرایسب\e[59G.دوشی\u{200c}م\e[66Gکیرات\e[72Gرتدوز\r\n\r\n\e[4Gرادقم\e[10G.ینیبب\e[17Gار\e[20Gتارییغت\e[28Gات\e[31Gنک\e[34Gارجا\e[39Gار\e[42Ggit\e[46Gstatus\e[53Gروتسد\e[59Gو\e[61Gنک\e[64Gزاب\e[68Gار\e[71Gconfig.json\e[83Gلیاف\e[88Gهژورپ\e[94Gرد\r\n\e[3Gtimeout\e[11Gار\e[14Gنوکیآ\e[20Gیه\u{200c}زادنا\e[28Gو\e[30Gراذگب\e[36Gهیناثی\u{200c}لیم\e[46G123\e[50Gیور\e[54Gار\e[57G(33\e[61Gx\e[63G20)\e[67Gراد\e[71Gهگن.\r\n\r\n\e[3G-\e[5Gلوا\e[9Gدروم\r\n\e[3G-\e[5Gمود\e[9Gدروم\r\n\e[5G-\e[7Gفلا\e[11Gدرومریز\r\n\e[5G-\e[7Gب\e[9Gدرومریز\r\n\e[3G-\e[5Gموس\e[9Gدروم\r\n\r\n\e[3G1.\e[6Gلوا\e[10Gمدق\r\n\e[3G2.\e[6Gمود\e[10Gمدق\r\n\r\n\e[3G┌──────┬─────────────────────┬───────┐\r\n\e[3G│\e[5Gدادعت\e[11G│\e[20Gحیضوت\e[33G│\e[36Gمان\e[40G│\r\n\e[3G├──────┼─────────────────────┼───────┤\r\n\e[3G│\e[9G5\e[11G│\e[14Gزبس\e[18Gای\e[21Gزمرق\e[26Gیاه\u{200c}ویم\e[33G│\e[36Gبیس\e[40G│\r\n\e[3G├──────┼─────────────────────┼───────┤\r\n\e[3G│\e[9G3\e[11G│\e[13Gهعلاطم\e[20Gیارب\e[25Gیاه\u{200c}لیسو\e[33G│\e[35Gباتک\e[40G│\r\n\e[3G├──────┼─────────────────────┼───────┤\r\n\e[3G│\e[8G12\e[11G│\e[21Gنتشون\e[27Gرازبا\e[33G│\e[35Gدادم\e[40G│\r\n\e[3G└──────┴─────────────────────┴───────┘\r\n\r\n\e[3Gnums\e[8G=\e[10G[\e[32m1\e[39m,\e[14G\e[32m2\e[39m,\e[17G\e[32m3\e[39m]\r\n\e[3Gtotal\e[9G=\e[11G\e[36msum\e[39m(nums)\r\n\e[3G\e[36mprint\e[39m(total)\r\n\r\n\e[38;2;153;153;153m✻\e[3GBrewed\e[10Gfor\e[14G6s\e[17G·\e[19Gdone\e[24G1:41\e[29GAM\e[39m\r\n\r\n\e[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────\e[39m\r\n❯ \r\n\e[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────\e[39m\r\n\e[3G\e[38;2;255;193;7m⏵⏵\e[6Gauto\e[11Gmode\e[16Gon\e[38;2;153;153;153m (shift+tab\e[30Gto\e[33Gcycle)\e[40G·\e[42G←\e[44Gfor\e[48Gagents\e[81G◐\e[83Gmedium\e[90G·\e[92G/effort\e[39m\r\n\e[2C\e[3A\e[?25h\e[?2026l
+734 app \e[>0q
+734 app \e[?u
+734 app \e]7501;?\x07
+735 app \e[c
+735 keys \e[?61c
+3258 keys \e[17;29;0;1;8;1_
+3258 keys \e[67;46;3;1;8;1_\e[67;46;3;0;8;1_\e[17;29;0;0;0;1_
+3269 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[2C\e[1A\e[38;2;153;153;153mPress Ctrl-C again to exit\e[39m                         \r\n\e[2C\e[3A\e[?25h\e[?2026l
+3758 keys \e[17;29;0;1;8;1_
+3758 keys \e[67;46;3;1;8;1_\e[67;46;3;0;8;1_\e[17;29;0;0;0;1_
+3761 app \e[?1006l\e[?1003l\e[?1002l\e[?1000l
+3761 app \e[2D\e[3B
+3761 app \e[?1004l\e[?1004h\e[>4m\e[<u\e[?2031l\e[?2004l\e(B\x0f\e[?1016l\e[?1006l\e[?1003l\e[?1002l\e[?1000l\e[?25h\e7\e[r\e8
+3762 app \e]0;\e\\
+3762 app \e[2m\e[22m\r\n\e[2mResume this session with:\e[22m\r\n\e[2mclaude --safe-mode --model haiku --resume 00000000-0000-0000-0000-000000000000\e[22m\r\n\e[2m\e[22m
+4707 app \e[?1004l\e[?9001l

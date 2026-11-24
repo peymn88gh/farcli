@@ -1,0 +1,20 @@
+# Two short Farsi lines typed in the Input box of the screen reader display; nothing is sent.
+until:shift+tab
+quiet:2500
+screen:
+keys:سلام world 12
+wait:800
+screen:
+press:ctrl+k
+press:ctrl+u
+wait:400
+keys:اندازه (33 x 20) است
+wait:800
+screen:
+press:ctrl+k
+press:ctrl+u
+wait:400
+press:ctrl+c
+wait:500
+press:ctrl+c
+wait:2500

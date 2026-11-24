@@ -1,0 +1,43 @@
+farcli recording 1
+app: claude
+app-version: 2.1.322 (Claude Code)
+system: Windows native
+size: 100x30
+cursor: 0,0
+command: claude --safe-mode --model haiku --resume 00000000-0000-0000-0000-000000000000
+windows-version: Microsoft Windows [Version 10.0.22631.6199]
+hidden-terminal: Microsoft.Windows.Console.ConPTY 1.25.261109001, shipped with farcli
+display-mode: classic (CLAUDE_CODE_NO_FLICKER=0)
+holds: not a model's reply: a copy of an earlier session's transcript in which the reply was replaced by hand with the Markdown text in claude-classic-markdown-shapes.reply.md, started again with --resume so that Claude Code draws it. It shows how Claude Code draws lines separated by single line breaks, code blocks with and without a language, a heading, a quotation, a link, inline code, and list items that wrap; nothing is typed or sent
+arguments: --safe-mode keeps the user's own settings, plugins and servers out; --model haiku keeps the reply cheap; DISABLE_NON_ESSENTIAL_MODEL_CALLS=1 was set as well
+environment: as PowerShell in Windows Terminal has it: only the variables Windows keeps for the machine and the user, plus WT_SESSION and WT_PROFILE_ID; no NO_COLOR, TERM, COLORTERM or TERM_PROGRAM
+terminal: the stand-in Terminal says where its cursor is and what kind of terminal it is, and gives Windows Terminal's default colours (text cccccc, background 0c0c0c) when asked for them
+made-with: examples/hidden_terminal_probe played claude-classic-markdown-shapes.steps into farcli on a hidden terminal, with nobody at the keyboard
+
+20 app \e[1t
+20 app \e[6n\e[c\e[?1004h\e[?9001h
+21 app \e[1;1H
+190 app \e]0;claude\e\\
+348 app \e7\e[r\e8\e[?25h
+599 app \e[?25l
+600 app \e[?2004h\e[?2031h\e[?1004h
+600 app \e[?9001l\e[?9001h
+600 app \e[<u\e[>5u\e[>4;2m
+601 app \e]0;✳ تست قالب\u{200c}بندی متن فارسی و کد\e\\
+642 app \e[?2026h\e[38;2;215;119;87m ▐\e[48;2;0;0;0m▛███▛█\e[12G\e[39m\e[49m\e[1mClaude\e[19GCode\e[24G\e[22m\e[38;2;153;153;153mv2.1.322\e[39m\r\n\e[38;2;215;119;87m▝▜\e[48;2;0;0;0m█████\e[49m█▀\e[12G\e[38;2;153;153;153mHaiku\e[18G5.5\e[22G·\e[24GClaude\e[31GPlan \e[39m\r\n\e[38;2;215;119;87m ▝▝\e[7G▝▝\e[12G\e[38;2;153;153;153mC:\\Users\\Public\\rtl-demo\e[39m\r\n\r\n\e[38;2;255;193;7m⚠\e[3GSafe\e[8Gmode:\e[14Gall\e[18Gcustomizations\e[33Gare\e[37Gdisabled\e[46G(CLAUDE.md,\e[58Gskills,\e[66Gplugins,\e[75Ghooks,\e[82GMCP,\e[87Gagents,\e[95Gand\e[39m\r\n\e[3G\e[38;2;255;193;7mmore)\e[39m\r\n\e[3G\e[38;2;153;153;153mRestart\e[11Gwithout\e[19G--safe-mode\e[31Gto\e[34Gre-enable\e[39m\r\n\r\n\e[48;2;55;55;55m\e[38;2;153;153;153m❯ \e[38;2;255;255;255m فارگاراپ کی .۱ :سیونب ار شخب جنپ نیمه طقف و هدب باوج رازبا زا هدافتسا نودب و هاتوک یلیخ افطل\e[39m     \e[49m\r\n\e[48;2;55;55;55m  \e[38;2;255;255;255mلیاف مان ،یسیلگنا یاهه\u{200c}ملک اب یسراف نآ رد هک یاه\u{200c}لمجود فارگاراپ کی .۲ .زییاپ یه\u{200c}رابرد یسراف یاه\u{200c}لمجه\u{200c}س\e[39m \e[49m\r\n\e[48;2;55;55;55m  \e[38;2;255;255;255mconfig.json، لثم روتسد کی git status 33 و 123 لثم ییاهددع و x 20 (زتنارپ لخاد) دشاب هدش طولخم. \e[39m   \e[49m\r\n\e[48;2;55;55;55m  \e[38;2;255;255;255m کی .۴ .یدرومود راده\u{200c}رامش تسرهف کی دعب و ،دراد درومریز ود مود دروم هک یدرومه\u{200c}س راده\u{200c}ناشن تسرهف کی .۳\e[39m \e[49m\r\n\e[48;2;55;55;55m  \e[38;2;255;255;255m.یطخه\u{200c}س Python دک کولب کی .۵ .فیدر هس و )دادعت ،حیضوت ،مان( نوتس هس اب لودج\e[39m                        \e[49m\r\n\r\n\e[38;2;255;255;255m●\e[3G\e[39m.دیآی\u{200c}م\e[10Gهداس\e[15Gطخ\e[18Gتسکش\e[23Gاب\e[26Gرعش\e[30Gکی\e[33Gنآ\e[36Gزا\e[39Gدعب\e[43Gو\e[45Gتسا\e[49Gیلومعم\e[56Gفارگاراپ\e[65Gنیا\r\n\r\n\e[3Gتسا\e[7Gسیخ\e[11Gهچوک\e[16G،درابی\u{200c}م\e[24Gناراب\r\n\e[3GPython\e[10Gمسیونی\u{200c}م\e[18Gو\e[20Gمراد\e[25Gتسود\e[30Gار\r\n\e[3Gتسا\e[7Gگنت\e[11Gوت\e[14Gیارب\e[19Gملد\r\n\r\n\e[3G.دناه\u{200c}دش\e[11Gادج\e[15Gهلصاف\e[21Gود\e[24Gاب\e[27Gهک\e[30Gدراد\e[35Gطخ\e[38Gود\e[41Gفارگاراپ\e[50Gنیا\r\n\e[3G.تسا\e[8Gفارگاراپ\e[17Gنامه\e[22Gمود\e[26Gطخ\r\n\r\n\e[3G:نابز\e[9Gنودب\e[14Gکولب\r\n\r\n\e[3G\e[38;2;177;185;249mایند\e[8Gمالس\e[39m\r\n\e[3G\e[38;2;177;185;249mتسا\e[7Gهنومن\e[13Gنتم\e[17Gکی\e[20Gنیا\e[39m\r\n\e[3G\e[38;2;177;185;249mname\e[8G=\e[10Gیلع\e[39m\r\n\r\n\e[3G:هتشر\e[9Gنودب\e[14Gbash\e[19Gکولب\r\n\r\n\e[3Ggit\e[7Gadd\e[11G.\r\n\e[3Ggit\e[7Gcommit\r\n\e[3Gnpm\e[7Ginstall\r\n\r\n\e[3G:یسراف\e[10Gاب\e[13Gbash\e[18Gکولب\r\n\r\n\e[3G\e[36mecho\e[8G\e[39mایند\e[13Gمالس\r\n\e[3Gهناخ=هشوپ\r\n\r\n\e[3G:یسراف\e[10Gمان\e[14Gاب\e[17Gpython\e[24Gکولب\r\n\r\n\e[3G)یدورو(هبساحم\e[17G=\e[19Gهجیتن\r\n\e[3G)هجیتن(هریخذ\r\n\r\n\e[3G:text\e[9Gکولب\r\n\r\n\e[3Gنتم\e[7Gلوا\e[11Gطخ\r\n\e[3Gنتم\e[7Gمود\e[11Gطخ\r\n\r\n\e[3G:نابز\e[9Gنودب\e[14Gیطخک\u{200c}ی\e[20Gکولب\r\n\r\n\e[3G\e[38;2;177;185;249mتسا\e[7Gدک\e[10Gنیا\e[14G،ایند\e[20Gمالس\e[39m\r\n\r\n\e[3G:هتخانشان\e[13Gنابز\e[18Gاب\e[21Gکولب\r\n\r\n\e[3G\e[2mfoolang\e[22m\r\n\e[3Gهمانرب\e[10Gنک\e[13Gارجا\r\n\e[3Gدش\e[6Gمامت\r\n\r\n\e[3G\e[1mیسراف\e[9Gناونع\e[15Gکی\e[22m\r\n\r\n\e[3G\e[2m▎\e[5G\e[22m\e[3mیسراف\e[11Gلوق\e[15Gلقن\e[19Gکی\e[23m\r\n\e[3G\e[2m▎\e[5G\e[22m\e[3mلوق\e[9Gلقن\e[13Gمود\e[17Gطخ\e[23m\r\n\r\n\e[3G.هلمج\e[9Gکی\e[12Gرد\e[15G\e]8;id=ags5vy;https://example.com\x07\e[94mدنویپ\e[21G\e]8;;\x07\e[39mو\e[23G\e[3mجک\e[26Gنتم\e[30G\e[23mو\e[32G\e[1mگنررپ\e[38Gنتم\e[42G\e[22mو\e[44G\e[38;2;177;185;249mیطخن\u{200c}ورد\e[52Gدک\e[55G\e[39mاب\e[58Gنتم\r\n\r\n\e[3G-\e[5Gطخ\e[8Gمینیبب\e[15Gات\e[18Gدورب\e[23Gمود\e[27Gطخ\e[30Gهب\e[33Gنوتس\e[38Gدص\e[41Gیانهپ\e[47Gهب\e[50Gیاه\u{200c}نایاپ\e[59Gرد\e[62Gدیاب\e[67Gهک\e[70Gتسا\e[74Gدنلب\e[79Gردقن\u{200c}آ\e[85Gهک\e[88Gتسرهف\e[94Gدروم\e[99Gکی\r\n\e[5G.دوشی\u{200c}م\e[12Gهدیشک\e[18Gروطچ\e[23Gو\e[25Gدوشی\u{200c}م\e[31Gعورش\e[36Gاجک\e[40Gزا\e[43Gنآ\e[46Gمود\r\n\e[3G-\e[5Gهاتوک\e[11Gدروم\r\n\r\n\e[3G\e[34mdef\e[7G\e[33mgreet\e[39m():\r\n\e[7G\e[36mprint\e[39m(\e[31m"مالس"\e[39m)\r\n\r\n\e[3G1.\e[6Gمینیبب\e[13Gات\e[16Gدورب\e[21Gمود\e[25Gطخ\e[28Gهب\e[31Gنوتس\e[36Gدص\e[39Gیانهپ\e[45Gهب\e[48Gیاه\u{200c}نایاپ\e[57Gرد\e[60Gدیاب\e[65Gهک\e[68Gتسا\e[72Gدنلب\e[77Gردقن\u{200c}آ\e[83Gهک\e[86Gراده\u{200c}رامش\e[95Gمدق\e[99Gکی\r\n\e[6G.دوشی\u{200c}م\e[13Gعورش\e[18Gاجک\e[22Gزا\e[25Gنآ\e[28Gمود\e[32Gطخ\r\n\e[3G2.\e[6Gهاتوک\e[12Gمدق\r\n\e[6G-\e[9Gو\e[11Gدوری\u{200c}م\e[17Gمود\e[21Gطخ\e[24Gهب\e[27Gنوتس\e[32Gدص\e[35Gیانهپ\e[41Gهب\e[44Gیاه\u{200c}نایاپ\e[53Gرد\e[56Gهک\e[59Gدنکی\u{200c}م\e[65Gادیپ\e[70Gهمادا\e[76Gردقن\u{200c}آ\e[82Gهک\e[85Gیدنلب\e[91Gدرومریز\r\n\e[8G.دنیشنب\e[16Gشدوخ\e[21Gنتم\e[25Gریز\e[29Gدیاب\r\n\r\n\e[3GName:\e[9Gیلع\r\n\e[3G۳۰\e[6G:نس\r\n\r\n\e[3G:تسا\e[8Gنیا\e[12Gنم\e[15Gیناشن\r\n\e[3Gیدازآ\e[9Gنابایخ\e[16G،نارهت\r\n\e[3G3\e[5Gدحاو\e[10G،12\e[14Gکالپ\r\n\r\n\e[38;2;153;153;153m✻\e[3GBrewed\e[10Gfor\e[14G6s\e[17G·\e[19Gdone\e[24G1:41\e[29GAM\e[39m\r\n\r\n\e[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────\e[39m\r\n❯ \r\n\e[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────\e[39m\r\n\e[3G\e[38;2;255;193;7m⏵⏵\e[6Gauto\e[11Gmode\e[16Gon\e[38;2;153;153;153m (shift+tab\e[30Gto\e[33Gcycle)\e[40G·\e[42G←\e[44Gfor\e[48Gagents\e[81G◐\e[83Gmedium\e[90G·\e[92G/effort\e[39m\r\n\e[2C\e[3A\e[?25h\e[?2026l
+756 app \e[>0q
+758 app \e[?u
+761 app \e]7501;?\x07
+762 app \e[c
+762 keys \e[?61c
+3288 keys \e[17;29;0;1;8;1_
+3288 keys \e[67;46;3;1;8;1_\e[67;46;3;0;8;1_\e[17;29;0;0;0;1_
+3298 app \e[?2026h\e[?25l\e[2D\e[3B\r\e[2C\e[1A\e[38;2;153;153;153mPress Ctrl-C again to exit\e[39m                         \r\n\e[2C\e[3A\e[?25h\e[?2026l
+3789 keys \e[17;29;0;1;8;1_
+3789 keys \e[67;46;3;1;8;1_\e[67;46;3;0;8;1_\e[17;29;0;0;0;1_
+3792 app \e[?1006l\e[?1003l\e[?1002l\e[?1000l
+3793 app \e[2D\e[3B
+3793 app \e[?1004l\e[?1004h\e[>4m\e[<u\e[?2031l\e[?2004l\e(B\x0f\e[?1016l\e[?1006l\e[?1003l\e[?1002l\e[?1000l\e[?25h\e7\e[r\e8
+3793 app \e]0;\e\\
+3794 app \e[2m\e[22m\r\n\e[2mResume this session with:\e[22m\r\n\e[2mclaude --safe-mode --model haiku --resume 00000000-0000-0000-0000-000000000000\e[22m\r\n\e[2m\e[22m
+4782 app \e[?1004l\e[?9001l
