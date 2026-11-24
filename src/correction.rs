@@ -5,6 +5,11 @@
 //! paragraph of one line, as wide as the Terminal. For a Target app, the
 //! Region finder says where the paragraphs of Agent output are, and only
 //! those are laid out again: the rest of the screen is shown as drawn.
+//!
+//! Two rules here stand between the Region finder and a screen it was not
+//! built for, such as a later version of the app may draw. Nothing is laid
+//! out until the screen has shown something that only the app draws. And a
+//! paragraph whose rows hold a line or the side of a box is left as drawn.
 
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};

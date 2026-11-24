@@ -158,6 +158,26 @@ fn f12_held_down_switches_once() {
 }
 
 #[test]
+fn f12_let_go_in_another_window_does_not_cost_the_next_press() {
+    let mut run = Run::start(AppProfile::claude_code(), 30, 6);
+    run.app_writes(reply(&[&["سلام دنیا"]]));
+    let corrected_screen = run.terminal.screen();
+
+    // The key goes down, and the user moves to another window before
+    // letting it go: the Terminal never hears of the key coming up.
+    run.user_types(F12_DOWN);
+    run.user_types("\x1b[O");
+    assert!(run.shows_what_the_app_drew());
+    // Back in the Terminal, F12 is pressed once more.
+    run.user_types("\x1b[I");
+    run.user_presses_f12();
+
+    assert_eq!(run.terminal.screen(), corrected_screen);
+    // Only the news about the window reached the app.
+    assert_eq!(run.app_received, b"\x1b[O\x1b[I");
+}
+
+#[test]
 fn f12_from_a_terminal_with_no_windows_form_for_keys_switches_too() {
     let mut run = Run::start(AppProfile::claude_code(), 30, 6);
     run.app_writes(reply(&[&["سلام دنیا"]]));

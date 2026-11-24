@@ -66,6 +66,12 @@ impl Hotkey {
                 Pressed::No
             }
             _ if self.in_paste => Pressed::No,
+            // A key let go while another window has the keyboard never
+            // comes up as far as the Terminal knows.
+            Input::Focus { .. } => {
+                self.held = false;
+                Pressed::No
+            }
             Input::Key(key) if key.key == F12 => self.sees_f12(key),
             Input::Other(code) if code == F12_IN_PLAIN_FORM => Pressed::Now,
             _ => Pressed::No,
