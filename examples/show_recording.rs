@@ -8,6 +8,9 @@
 //!                  after the app has drawn something
 //!   --scrollback   also print the rows that scrolled off the top
 //!   --numbers      show characters nobody can see as `<200c>`
+//!   --styles       under each row, print the colours and styles of its
+//!                  cells: `[first-last what]` for each stretch of columns
+//!                  drawn in anything but the Terminal's own colours
 //!   --farcli       show what farcli makes of it: play the recording through
 //!                  a session with the App profile of the recorded app
 //! ```
@@ -19,11 +22,13 @@ use std::env;
 use std::process::ExitCode;
 
 use farcli::recording::{Event, Recording, Replay};
+use farcli::screen::{row_text, Cell, Color, Style, Underline};
 
 fn main() -> ExitCode {
     let mut at_keys = false;
     let mut scrollback = false;
     let mut numbers = false;
+    let mut styles = false;
     let mut through_farcli = false;
     let mut file = None;
     for arg in env::args().skip(1) {
@@ -31,12 +36,15 @@ fn main() -> ExitCode {
             "--at-keys" => at_keys = true,
             "--scrollback" => scrollback = true,
             "--numbers" => numbers = true,
+            "--styles" => styles = true,
             "--farcli" => through_farcli = true,
             _ => file = Some(arg),
         }
     }
     let Some(file) = file else {
-        eprintln!("usage: show_recording [--at-keys] [--scrollback] [--numbers] [--farcli] FILE");
+        eprintln!(
+            "usage: show_recording [--at-keys] [--scrollback] [--numbers] [--styles] [--farcli] FILE"
+        );
         return ExitCode::from(2);
     };
     let recording = match Recording::load(&file) {
@@ -55,16 +63,25 @@ fn main() -> ExitCode {
         println!("{name}: {value}");
     }
 
+    let print_row = |row: &[Cell]| {
+        println!("|{}", visible(&row_text(row), numbers));
+        if styles {
+            let stretches = styled_stretches(row);
+            if !stretches.is_empty() {
+                println!("    {}", stretches.join(" "));
+            }
+        }
+    };
     let show = |title: &str, replay: &Replay| {
         if scrollback {
             println!("--- scrolled off the top ---");
-            for row in replay.terminal.scrollback_text() {
-                println!("|{}", visible(&row, numbers));
+            for row in replay.terminal.scrollback() {
+                print_row(&row);
             }
         }
         println!("--- {title} ---");
-        for row in replay.terminal.screen_text() {
-            println!("|{}", visible(&row, numbers));
+        for row in replay.terminal.screen() {
+            print_row(&row);
         }
         let cursor = replay.terminal.cursor();
         println!(
@@ -129,4 +146,57 @@ fn visible(row: &str, numbers: bool) -> String {
         }
     }
     text
+}
+
+/// Each stretch of a row's cells that share a style other than the
+/// Terminal's own, as `[first-last what]`, columns counted from 0. Empty
+/// cells in the Terminal's own colours are left out.
+fn styled_stretches(row: &[Cell]) -> Vec<String> {
+    let plain = Style::default();
+    let mut stretches: Vec<(usize, usize, &Style)> = Vec::new();
+    for (col, cell) in row.iter().enumerate() {
+        if cell.is_left_alone() || cell.style == plain {
+            continue;
+        }
+        match stretches.last_mut() {
+            Some((_, last, style)) if *last + 1 == col && **style == cell.style => *last = col,
+            _ => stretches.push((col, col, &cell.style)),
+        }
+    }
+    stretches
+        .into_iter()
+        .map(|(first, last, style)| format!("[{first}-{last} {}]", described(style)))
+        .collect()
+}
+
+/// A style in words: the foreground colour, `on` the background colour,
+/// then whatever else is set.
+fn described(style: &Style) -> String {
+    let color = |color: Color| match color {
+        Color::Default => "default".to_string(),
+        Color::Palette(number) => format!("colour{number}"),
+        Color::Rgb(red, green, blue) => format!("#{red:02x}{green:02x}{blue:02x}"),
+    };
+    let mut parts = Vec::new();
+    if style.foreground != Color::Default {
+        parts.push(color(style.foreground));
+    }
+    if style.background != Color::Default {
+        parts.push(format!("on {}", color(style.background)));
+    }
+    for (set, name) in [
+        (style.bold, "bold"),
+        (style.dim, "dim"),
+        (style.italic, "italic"),
+        (style.inverse, "inverse"),
+        (style.hidden, "hidden"),
+        (style.strikeout, "strikeout"),
+        (style.underline != Underline::None, "underline"),
+        (style.link.is_some(), "link"),
+    ] {
+        if set {
+            parts.push(name.to_string());
+        }
+    }
+    parts.join(" ")
 }
