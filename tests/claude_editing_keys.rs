@@ -850,7 +850,7 @@ fn after_any_sequence_of_editing_keys_the_text_shown_is_the_text_the_app_holds()
         // The keys so far, as a test would press them.
         let mut pressed: Vec<String> = Vec::new();
         let mut line_breaks = 0;
-        for _ in 0..40 {
+        'keys: for _ in 0..40 {
             let key = match pick(100) {
                 0..=27 => Key::Left,
                 28..=55 => Key::Right,
@@ -891,11 +891,17 @@ fn after_any_sequence_of_editing_keys_the_text_shown_is_the_text_the_app_holds()
                 // The app draws when it has handled the first of them, and
                 // again when it has handled them all.
                 app.handles(1);
+                if app.draws_a_row_the_app_would_not() {
+                    break 'keys;
+                }
                 look(
                     &app,
                     &format!("{said}, when the app had handled one of the last"),
                 );
                 app.handles(together.len() - 1);
+                if app.draws_a_row_the_app_would_not() {
+                    break 'keys;
+                }
                 look(&app, &said);
                 continue;
             }
@@ -905,6 +911,11 @@ fn after_any_sequence_of_editing_keys_the_text_shown_is_the_text_the_app_holds()
             let before = position(&app);
             let forwarded = app.presses(key.clone());
             let after = position(&app);
+            // Spaces typed where the app wraps: the stand-in has drawn what
+            // the app would not, and this message is given up.
+            if app.draws_a_row_the_app_would_not() {
+                break 'keys;
+            }
 
             // The text shown is the text the app holds, row by row.
             if look(&app, &said) != Shown::AsATextField {
@@ -1271,4 +1282,32 @@ fn the_cursor_goes_by_the_order_the_row_is_shown_in_where_layout_has_rules_of_it
     app.types("7");
 
     assert_eq!(app.shown(), right_to_left(&["اندازه 33 7x 20 است"], 40));
+}
+
+#[test]
+fn a_key_that_deletes_the_rest_of_the_line_takes_the_spaces_at_its_end_too() {
+    let mut app = ClaudeCode::start(40, 10);
+    // The message ends with a space, which is drawn only while the cursor
+    // is after it.
+    app.types("سلام world foo ");
+    // Onto the space between `world` and `foo`.
+    pressing(&mut app, Key::Right, 7);
+    assert_eq!(app.cursor(), at(0, left_of(15, 40) + 7));
+
+    // The rest of the line goes. Nothing on screen says whether the space
+    // at its end went too, and it did.
+    app.presses(Key::DeleteToEnd);
+    assert_eq!(app.shown(), right_to_left(&["سلام world"], 40));
+    let end = at(0, left_of(10, 40));
+    assert_eq!(app.cursor(), end);
+
+    // So left of the cursor there is nothing, and one cell to its right is
+    // the `w`.
+    app.presses(Key::Left);
+    assert_eq!(app.cursor(), end);
+
+    app.presses(Key::Right);
+
+    assert_eq!(app.cursor(), at(0, end.col + 1));
+    assert_eq!(app.character_under_the_cursor(), 'w');
 }

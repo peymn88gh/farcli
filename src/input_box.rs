@@ -798,10 +798,23 @@ impl InputBox {
             false => key + 1,
         };
         let cursor = before.cursor;
+        // Spaces at the end of a line are not drawn, so the screen cannot
+        // say whether a stretch after the cursor took them along. The key
+        // that deletes the rest of a line does, and it is the usual one:
+        // a stretch that reaches them takes them.
+        let with_the_spaces_at_the_end_of_the_line = |to: usize| -> usize {
+            let spaces = before.units[to..].iter().take_while(|unit| unit.is_space());
+            let end = to + spaces.count();
+            match before.units.get(end) {
+                None | Some(Unit::LineBreak | Unit::RowEnd) => end,
+                Some(Unit::Character(..)) => to,
+            }
+        };
         for done in (fewest..=self.waiting.len()).rev() {
             // The shortest stretch first: before the cursor, then after it.
             let before_the_cursor = (0..cursor).rev().map(|from| from..cursor);
-            let after_the_cursor = (cursor + 1..=before.units.len()).map(|to| cursor..to);
+            let after_the_cursor = (cursor + 1..=before.units.len())
+                .map(|to| cursor..with_the_spaces_at_the_end_of_the_line(to));
             'stretches: for gone in before_the_cursor.chain(after_the_cursor) {
                 let mut message = before.clone();
                 message.cursor = gone.start;

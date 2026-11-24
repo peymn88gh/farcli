@@ -28,7 +28,7 @@
 //!   cursor steps over both as one, and Backspace deletes both.
 //! - With no message, the box shows a hint of the app's own, drawn dim.
 
-use super::{as_drawn, at, direction_of, Run};
+use super::{as_drawn, at, cells, direction_of, Run};
 use farcli::layout::Direction;
 use farcli::screen::Position;
 
@@ -504,6 +504,16 @@ impl ClaudeCode {
     /// True when the box holds no message, and shows the app's hint.
     pub fn holds_nothing(&self) -> bool {
         self.message.is_empty()
+    }
+
+    /// True when the stand-in has drawn a row longer than the app lets one
+    /// get: text as wide as the app wraps at, and then spaces. The stand-in
+    /// keeps every space on the row it follows. What the app does with
+    /// spaces where it wraps was never seen, so such a frame says nothing
+    /// about the app.
+    pub fn draws_a_row_the_app_would_not(&self) -> bool {
+        let most = self.cols - 3;
+        self.rows_as_drawn().iter().any(|row| cells(row) > most)
     }
 
     /// The rows of the message as the app draws them.

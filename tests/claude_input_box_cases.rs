@@ -194,9 +194,12 @@ fn backspace_and_delete_leave_the_rest_of_the_message_in_order() {
 
     assert_eq!(app.shown(), right_to_left(&["سلام 33 x 20".to_string()], 40));
 
-    // The cursor is on the empty cell at the left end of the row, and the
-    // «x» is the character on its right: «x 20» reads from the left.
-    app.presses(Key::Right);
+    // The cursor is on the empty cell at the left end of the row. The size
+    // reads from the left, as it was written: to the right over «33» and a
+    // space is the «x».
+    for _ in 0..4 {
+        app.presses(Key::Right);
+    }
     assert_eq!(app.character_under_the_cursor(), 'x');
 
     app.presses(Key::Delete);
@@ -210,9 +213,9 @@ fn the_cursor_is_on_the_right_digit_of_a_number_beside_an_english_word() {
     // The app draws «33 x 20» as it draws «x 20 33» and «33 20 x». Only the
     // keys tell which digit the app's cursor is before.
     app.types("اندازه 33 x 20 است");
-    // From the left end of the row, to the right over «است», a space,
-    // «x 20» and a space.
-    for _ in 0..10 {
+    // From the left end of the row, to the right over «است» and a space:
+    // the size reads from the left, as it was written.
+    for _ in 0..5 {
         app.presses(Key::Right);
     }
 
