@@ -9,6 +9,7 @@ use crate::app_profile::AppProfile;
 use crate::correction::Correction;
 use crate::hidden_screen::{Aside, HiddenScreen};
 use crate::hidden_terminal::HiddenTerminal;
+use crate::hotkey::{Hotkey, Pressed};
 use crate::painter::{Frame, Painter};
 use crate::screen::Position;
 use crate::terminal_input::{Input, TerminalInput};
@@ -25,6 +26,10 @@ pub struct Session {
     /// True when the hidden terminal must be given a character that came
     /// with no key as a key, because it would garble the plain character.
     characters_as_keys: bool,
+    hotkey: Hotkey,
+    /// False while the user has switched the correction off with the
+    /// hotkey: the Terminal then shows what the Target app drew.
+    correcting: bool,
 }
 
 /// What farcli tells a hidden terminal that asks what kind of terminal it
@@ -54,6 +59,8 @@ impl Session {
             hidden_terminal_is_asking: false,
             terminal_input: TerminalInput::new(),
             characters_as_keys: false,
+            hotkey: Hotkey::new(),
+            correcting: true,
         }
     }
 
@@ -121,8 +128,24 @@ impl Session {
     /// its way to the Target app, one at a time and in the order it came.
     fn forward(&mut self, inputs: &[Input]) -> Reaction {
         let mut reaction = Reaction::default();
+        let mut switched = false;
         for input in inputs {
+            // The hotkey is farcli's own and never reaches the Target app.
+            match self.hotkey.sees(input) {
+                Pressed::Now => {
+                    self.correcting = !self.correcting;
+                    switched = true;
+                    continue;
+                }
+                Pressed::Still => continue,
+                Pressed::No => {}
+            }
             input.write_for_app(self.characters_as_keys, &mut reaction.for_app);
+        }
+        // A frame the app has not finished waits for its end as before, and
+        // is then shown the way the user now wants it.
+        if switched && !self.hidden_screen.mid_frame() {
+            reaction.for_terminal.extend(self.paint());
         }
         reaction
     }
@@ -162,7 +185,20 @@ impl Session {
             cursor: self.hidden_screen.cursor(),
             cursor_visible: self.hidden_screen.cursor_visible(),
         };
-        self.correction.correct(&mut frame);
+        if self.correcting {
+            self.correction.correct(&mut frame);
+        } else {
+            // The frame is shown as the app drew it. The correction is
+            // still given a copy, so that it goes on following the session
+            // and knows what scrolled off the top when it is switched on
+            // again.
+            self.correction.correct(&mut Frame {
+                changes: frame.changes.clone(),
+                rows: frame.rows.clone(),
+                cursor: frame.cursor,
+                cursor_visible: frame.cursor_visible,
+            });
+        }
         self.painter.paint(&frame)
     }
 }
