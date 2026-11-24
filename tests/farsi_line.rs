@@ -162,22 +162,46 @@ fn any_mix_of_letters_numbers_and_punctuation_is_ordered_as_the_unicode_rules_sa
         (state % from as u64) as usize
     };
 
-    for _ in 0..5000 {
+    let mut checked = 0;
+    for _ in 0..12000 {
         let len = 1 + pick(24);
         let line: String = (0..len)
             .map(|_| CHARACTERS[pick(CHARACTERS.len())])
             .collect();
         let line = line.trim();
-        if line.is_empty() {
+        if line.is_empty() || a_rule_of_farclis_own_has_a_say(line) {
             continue;
         }
 
+        checked += 1;
         assert_eq!(
             shown(40, line).trim_end(),
             by_the_unicode_rules(40, line).trim_end(),
             "for the line {line:?}"
         );
     }
+    assert!(checked >= 5000, "{checked}");
+}
+
+/// True for a line that one of the rules Layout adds to the Unicode rules
+/// may show differently. Those rules have their own tests, in
+/// `farsi_rules.rs`: a word with an English letter and no right-to-left one
+/// stays in one piece when it also holds a mark or a digit, numbers with a
+/// sign between them keep their order, and a line with digits of a
+/// right-to-left script and no letter runs right to left.
+fn a_rule_of_farclis_own_has_a_say(line: &str) -> bool {
+    let is_digit = |c: char| matches!(c, '1' | '2' | '٣');
+    let characters: Vec<char> = line.chars().collect();
+    let a_word_kept_whole = line.split(' ').any(|word| {
+        word.contains(|c: char| c.is_ascii_alphabetic())
+            && !word.contains(|c: char| c.is_alphabetic() && !c.is_ascii())
+            && word.contains(|c: char| !c.is_alphabetic())
+    });
+    let numbers_joined = characters
+        .windows(3)
+        .any(|three| is_digit(three[0]) && matches!(three[1], '-' | '+') && is_digit(three[2]));
+    let a_number_alone = !line.contains(char::is_alphabetic) && line.contains('٣');
+    a_word_kept_whole || numbers_joined || a_number_alone
 }
 
 #[test]

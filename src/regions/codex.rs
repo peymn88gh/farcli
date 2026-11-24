@@ -39,6 +39,22 @@
 //! paragraph, and where the writer broke the line (a poem, an address) each
 //! line is a paragraph of its own.
 //!
+//! A list item begins with a marker, a bullet or a number and a full stop,
+//! which Codex draws in a colour, four columns further in for each list the
+//! item is inside. The rows its text wraps onto start two or three columns
+//! further in than the marker. Each item is a region of its own.
+//!
+//! A table has no upright bars. Under its header and between its rows
+//! Codex draws a rule, a stretch of dashes for each column, and that is
+//! what tells a table and where its columns are. The whole table is one
+//! region. While the model is still writing a table Codex shows its source,
+//! which is left as drawn.
+//!
+//! A list ends at the first row that is neither an item nor a row an item
+//! wrapped onto, and a table at the first row that starts at the left edge
+//! and is not a rule. Plain rows there are what the model is writing next,
+//! drawn right under the part before it, and are read as prose.
+//!
 //! One kind of code looks exactly like lines of prose and is read as such:
 //! a block with no language named, or in a language Codex does not know,
 //! whose lines all start at the left edge. Codex gives it no colour.
@@ -50,7 +66,7 @@
 
 use crate::screen::{Cell, Color, Row};
 
-use super::{Kind, ParagraphStart, Region};
+use super::{ItemStart, Kind, ParagraphStart, Region};
 
 /// The first column of a message's text.
 const TEXT_COL: usize = 2;
@@ -89,7 +105,11 @@ enum Above {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Cut {
     Paragraph,
-    /// Anything that is not a paragraph: its other rows are not one either.
+    /// A list item: the rows below may be rows it wrapped onto.
+    List,
+    /// A table: the rows below are its other rows.
+    Table,
+    /// Anything else: its other rows are not to be touched either.
     Other,
 }
 
@@ -175,9 +195,9 @@ impl Finder {
                 .find(|region| region.rows.start < leaving && region.rows.end > leaving);
             self.above = match cut.map(|region| region.kind) {
                 Some(Kind::Paragraph(_)) => Above::Reply(Some(Cut::Paragraph)),
-                Some(Kind::Code | Kind::List | Kind::Table | Kind::Unsure) => {
-                    Above::Reply(Some(Cut::Other))
-                }
+                Some(Kind::ListItem(_)) => Above::Reply(Some(Cut::List)),
+                Some(Kind::Table) => Above::Reply(Some(Cut::Table)),
+                Some(Kind::Code | Kind::Unsure) => Above::Reply(Some(Cut::Other)),
                 // The Input box is at the bottom of the screen. If it ever
                 // scrolls off, the app is leaving, and what it draws next
                 // is under no Input box.
@@ -295,6 +315,7 @@ impl Walk<'_> {
                 rows: start..end,
                 cols: TEXT_COL.min(cols)..cols,
                 kind: Kind::SentMessage,
+                cut_above: false,
             });
             // What follows a sent message is the reply to it, even when
             // the reply's mark is not in sight: the default display keeps
@@ -320,6 +341,7 @@ impl Walk<'_> {
                 rows: self.span_start..end,
                 cols: first_col.min(cols)..cols,
                 kind,
+                cut_above: false,
             });
         }
         if self.state == Above::Sent {
@@ -346,6 +368,15 @@ impl Walk<'_> {
         }
         let parts = match top {
             Some(Cut::Other) => vec![(0, rows.len(), Kind::Unsure)],
+            Some(Cut::Table) => {
+                let end = table_end(rows, 0);
+                let mut parts = Vec::new();
+                if end > 0 {
+                    parts.push((0, end, Kind::Table));
+                }
+                self.what_follows(&mut parts, rows, &classes, end);
+                parts
+            }
             _ => self.parts(rows, &classes, top),
         };
         let cols = TEXT_COL.min(rows[0].len())..rows[0].len();
@@ -354,6 +385,7 @@ impl Walk<'_> {
                 rows: first + from..first + to,
                 cols: cols.clone(),
                 kind,
+                cut_above: top.is_some(),
             }));
     }
 
@@ -369,19 +401,36 @@ impl Walk<'_> {
         // From its first list item, table, quotation or tool result on, a
         // block is that and nothing else. A table's header row stands
         // above its first rule.
-        let claimed = classes
-            .iter()
-            .enumerate()
-            .find_map(|(at, class)| match class {
-                RowClass::ListItem => Some((at, Kind::List)),
-                RowClass::Rule => Some((at.saturating_sub(1), Kind::Table)),
-                RowClass::Marked => Some((at, Kind::Unsure)),
-                _ => None,
-            });
-        let free = claimed.map_or(rows.len(), |(from, _)| from);
+        let claim = classes.iter().position(|class| {
+            matches!(
+                class,
+                RowClass::ListItem | RowClass::Rule | RowClass::Marked
+            )
+        });
+        let free = match claim {
+            Some(at) if classes[at] == RowClass::Rule => at.saturating_sub(1),
+            Some(at) => at,
+            None => rows.len(),
+        };
+        // Rows that start further in than a paragraph's, at the top of a
+        // block whose start is out of sight, with a list after them or a
+        // list item cut by the top of the screen above them: they are rows
+        // that item wrapped onto.
+        let in_a_list =
+            claim.is_some_and(|at| classes[at] == RowClass::ListItem) || top == Some(Cut::List);
+        let carried_on = match top.is_some() && in_a_list {
+            true if classes[..free].iter().all(|class| *class == RowClass::Deep) => free,
+            _ => 0,
+        };
+        if carried_on > 0 {
+            parts.push((0, carried_on, Kind::ListItem(ItemStart::Above)));
+        }
+        // A row at the left edge under a list item that was cut by the top
+        // carries on nothing: it begins a paragraph.
+        let top = top.filter(|cut| *cut != Cut::List);
 
         let plain = |class: &RowClass| matches!(class, RowClass::Text | RowClass::Deep);
-        let mut at = 0;
+        let mut at = carried_on;
         while at < free {
             if !plain(&classes[at]) {
                 let kind = match classes[at] {
@@ -399,8 +448,42 @@ impl Walk<'_> {
             self.plain_rows(&mut parts, rows, at..end, &classes[at..end], top);
             at = end;
         }
-        parts.extend(claimed.map(|(from, kind)| (from, rows.len(), kind)));
+        match claim.map(|at| classes[at]) {
+            Some(RowClass::ListItem) => {
+                let end = list_items(&mut parts, rows, free, classes);
+                self.what_follows(&mut parts, rows, classes, end);
+            }
+            Some(RowClass::Rule) => {
+                let end = table_end(rows, free);
+                parts.push((free, end, Kind::Table));
+                self.what_follows(&mut parts, rows, classes, end);
+            }
+            Some(_) => parts.push((free, rows.len(), Kind::Unsure)),
+            None => {}
+        }
         parts
+    }
+
+    /// Names the rows that stand right under a list or a table, from the
+    /// row `from` on. While a reply arrives, Codex draws the part the model
+    /// is still writing under the part before it with no empty row between
+    /// the two: plain rows from the left edge there are prose. Anything
+    /// else is left as drawn.
+    fn what_follows(
+        &self,
+        parts: &mut Vec<(usize, usize, Kind)>,
+        rows: &[Row],
+        classes: &[RowClass],
+        from: usize,
+    ) {
+        if from >= rows.len() {
+            return;
+        }
+        if classes[from..].iter().all(|class| *class == RowClass::Text) {
+            self.plain_rows(parts, rows, from..rows.len(), &classes[from..], None);
+        } else {
+            parts.push((from, rows.len(), Kind::Unsure));
+        }
     }
 
     /// Names a run of rows in the Terminal's own colours, `rows[run]`.
@@ -445,6 +528,86 @@ impl Walk<'_> {
             parts.push((line[0], line[1], Kind::Paragraph(begins)));
         }
     }
+}
+
+/// Splits the rows of a list, `rows[from..]`, into its items, and returns
+/// the row after the list's last. Codex draws the marker of an item four
+/// columns further in for each list the item is inside, and the rows an
+/// item wraps onto two or three columns further in than its marker. A row
+/// that fits neither ends the list.
+fn list_items(
+    parts: &mut Vec<(usize, usize, Kind)>,
+    rows: &[Row],
+    from: usize,
+    classes: &[RowClass],
+) -> usize {
+    // The item being gathered: its first row, the column of its marker in
+    // the reply's area, and what it is.
+    let mut item: Option<(usize, usize, Kind)> = None;
+    for at in from..rows.len() {
+        let text = &rows[at][TEXT_COL.min(rows[at].len())..];
+        let start = text.iter().position(|cell| !is_empty(cell)).unwrap_or(0);
+        // A number is drawn with its last digit in the marker's column.
+        let marker = marker_len(text, start).filter(|len| {
+            let is_bullet = *len == 1;
+            classes[at] == RowClass::ListItem
+                && (start % 4 == 0 || (!is_bullet && (start + len - 1) % 4 == 1))
+        });
+        if let Some(len) = marker {
+            parts.extend(item.take().map(|(first, _, kind)| (first, at, kind)));
+            let text_col = TEXT_COL + start + len + 1;
+            item = Some((at, start, Kind::ListItem(ItemStart::Here { text_col })));
+            continue;
+        }
+        let carries_on = matches!(
+            classes[at],
+            RowClass::Text | RowClass::Deep | RowClass::ListItem
+        ) && item.is_some_and(|(_, marker_col, _)| start > marker_col);
+        if !carries_on {
+            parts.extend(item.take().map(|(first, _, kind)| (first, at, kind)));
+            return at;
+        }
+    }
+    parts.extend(item.map(|(first, _, kind)| (first, rows.len(), kind)));
+    rows.len()
+}
+
+/// The row after the last row of the table that `rows[from]` is a row of.
+/// A rule is a row of a table, and so is a row whose text starts further
+/// in than the left edge of the reply's area: Codex leaves a column empty
+/// before the text of every cell.
+fn table_end(rows: &[Row], from: usize) -> usize {
+    let is_a_table_row = |row: &Row| {
+        let text = &row[TEXT_COL.min(row.len())..];
+        match text.iter().position(|cell| !is_empty(cell)) {
+            Some(0) => is_line_drawing(text[0].character),
+            _ => true,
+        }
+    };
+    (from..rows.len())
+        .find(|at| !is_a_table_row(&rows[*at]))
+        .unwrap_or(rows.len())
+}
+
+/// How many cells the list marker at `start` takes, without the space
+/// after it: one for a bullet, and for a number its digits and the mark
+/// after them. `None` when no marker stands there.
+fn marker_len(text: &[Cell], start: usize) -> Option<usize> {
+    let then_empty = |at: usize| text.get(at).is_none_or(is_empty);
+    let first = text.get(start)?.character;
+    if matches!(first, '-' | '*' | '+' | '•') {
+        return then_empty(start + 1).then_some(1);
+    }
+    let digits = text[start..]
+        .iter()
+        .take_while(|cell| cell.character.is_ascii_digit())
+        .count();
+    (digits > 0
+        && text
+            .get(start + digits)
+            .is_some_and(|cell| matches!(cell.character, '.' | ')'))
+        && then_empty(start + digits + 1))
+    .then_some(digits + 1)
 }
 
 fn is_empty(cell: &Cell) -> bool {
@@ -529,21 +692,22 @@ fn row_class(row: &[Cell]) -> RowClass {
     };
     let first = text[start].character;
     let then_empty = |at: usize| text.get(at).is_none_or(is_empty);
-    let list_marker = || {
-        if matches!(first, '-' | '*' | '+' | '•') {
-            return then_empty(start + 1);
-        }
-        let digits = text[start..]
-            .iter()
-            .take_while(|cell| cell.character.is_ascii_digit())
-            .count();
-        digits > 0
-            && text
-                .get(start + digits)
-                .is_some_and(|cell| matches!(cell.character, '.' | ')'))
-            && then_empty(start + digits + 1)
-    };
     let characters = || text.iter().filter(|cell| !is_empty(cell));
+    // Every character in a colour, and neither bold from end to end nor
+    // italic from end to end: that is how Codex draws code.
+    let coloured_as_code = |cells: &[Cell]| {
+        let characters = || cells.iter().filter(|cell| !is_empty(cell));
+        characters().next().is_some()
+            && characters().all(|cell| cell.style.foreground != Color::Default)
+            && !characters().all(|cell| cell.style.bold)
+            && !characters().all(|cell| cell.style.italic)
+    };
+    // A line of code can begin with a dash too, as the lines of a
+    // comparison of two texts do. Codex gives a list's marker a colour and
+    // leaves the item's text in the Terminal's own, unless the whole item
+    // is bold or slanted.
+    let list_marker =
+        || marker_len(text, start).is_some_and(|len| !coloured_as_code(&text[start + len..]));
     if is_line_drawing(first) {
         if characters().all(|cell| matches!(cell.character, '─' | '━' | '═')) {
             RowClass::Rule

@@ -3,23 +3,32 @@
 //!
 //! For a program farcli knows nothing about, a row that holds Farsi is a
 //! paragraph of one line, as wide as the Terminal. For a Target app, the
-//! Region finder says where the paragraphs of Agent output are, and only
-//! those are laid out again: the rest of the screen is shown as drawn.
+//! Region finder says where the paragraphs, the list items and the tables
+//! of Agent output are, and only those are laid out again: the rest of the
+//! screen is shown as drawn.
+//!
+//! A list item is its marker and a paragraph: the item's rows are laid
+//! out whole, marker first, so in a Farsi item the marker is on the right
+//! and the rows the text wraps onto end under the text. The cells of a
+//! table are in `tables.rs`.
 //!
 //! Two rules here stand between the Region finder and a screen it was not
 //! built for, such as a later version of the app may draw. Nothing is laid
 //! out until the screen has shown something that only the app draws. And a
 //! paragraph whose rows hold a line or the side of a box is left as drawn.
 
+mod tables;
+
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::ops::Range;
 
 use crate::app_profile::{AppProfile, Screen};
 use crate::input_box::{InputBox, Place};
 use crate::layout::{self, Direction, Line};
 use crate::painter::Frame;
 use crate::regions::claude_code;
-use crate::regions::{Finder, Kind, ParagraphStart, Region};
+use crate::regions::{Finder, ItemStart, Kind, ParagraphStart, Region};
 use crate::screen::{Cell, Color, EraseScreen, Position, Row, ScreenChange};
 use crate::terminal_input::Input;
 use crate::undo::{self, DrawnRow, Start};
@@ -57,10 +66,16 @@ pub(crate) struct Correction {
 }
 
 /// What a row of a reply was found to be.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Seen {
     /// A row of a paragraph with this Paragraph direction.
     InParagraph(Direction),
+    /// A row of a list item that runs in this direction, whose text starts
+    /// `text` columns into the reply's area.
+    InListItem { direction: Direction, text: usize },
+    /// A row of a table whose columns are these stretches of the reply's
+    /// area.
+    InTable(Vec<Range<usize>>),
     /// A row of something that is shown as drawn.
     NotInParagraph,
 }
@@ -217,21 +232,36 @@ impl Correction {
             return regions;
         }
         let mut cut_by_the_top = None;
+        // The list item before the one being read, when the two stand
+        // under one another with no row between: the row after its last,
+        // and its direction.
+        let mut item_before: Option<(usize, Direction)> = None;
         for region in &regions {
-            let Kind::Paragraph(start) = region.kind else {
-                if self.on_alternate_screen && region.kind != Kind::InputBox {
-                    for row in region.rows.clone() {
-                        let row = drawn_row(&rows[row][region.cols.clone()], false);
-                        self.remember(&row, Seen::NotInParagraph);
+            match region.kind {
+                Kind::Paragraph(start) => {
+                    let Some(direction) = self.paragraph(rows, region, start) else {
+                        continue;
+                    };
+                    if region.rows.start < leaving && leaving < region.rows.end {
+                        cut_by_the_top = Some(direction);
                     }
                 }
-                continue;
-            };
-            let Some(direction) = self.paragraph(rows, region, start) else {
-                continue;
-            };
-            if region.rows.start < leaving && leaving < region.rows.end {
-                cut_by_the_top = Some(direction);
+                Kind::ListItem(start) => {
+                    let list = item_before
+                        .filter(|(end, _)| *end == region.rows.start)
+                        .map(|(_, direction)| direction);
+                    if let Some(direction) = self.list_item(rows, region, start, list) {
+                        item_before = Some((region.rows.end, direction));
+                    }
+                }
+                Kind::Table => self.table(rows, region),
+                Kind::InputBox => {}
+                // Rows whose start is out of sight, which the finder could
+                // not name, read as they did when it was in sight.
+                Kind::Code | Kind::Unsure if region.cut_above => {
+                    self.as_seen_before(rows, region);
+                }
+                _ => self.left_as_drawn(rows, region),
             }
         }
         if leaving > 0 {
@@ -240,11 +270,131 @@ impl Correction {
         regions
     }
 
-    fn remember(&mut self, row: &DrawnRow, seen: Seen) {
+    fn remember(&mut self, row: u64, seen: Seen) {
         if self.seen.len() > MOST_ROWS_SEEN {
             self.seen.clear();
         }
-        self.seen.insert(key(row), seen);
+        self.seen.insert(row, seen);
+    }
+
+    /// Notes that the rows of a region are shown as drawn, so that they
+    /// are not taken for a paragraph when the rows before them are out of
+    /// sight.
+    fn left_as_drawn(&mut self, rows: &[Row], region: &Region) {
+        if !self.on_alternate_screen {
+            return;
+        }
+        for row in region.rows.clone() {
+            let row = key(&drawn_row(&rows[row][region.cols.clone()], false));
+            // A row once read with everything about it in sight keeps that
+            // reading.
+            let read_before = matches!(
+                self.seen.get(&row),
+                Some(Seen::InListItem { .. } | Seen::InTable(_))
+            );
+            if !read_before {
+                self.remember(row, Seen::NotInParagraph);
+            }
+        }
+    }
+
+    /// Lays out rows the finder could not name because what they carry on
+    /// is above the rows given, when they were read before with that in
+    /// sight.
+    fn as_seen_before(&mut self, rows: &mut [Row], region: &Region) {
+        let first = key(&drawn_row(
+            &rows[region.rows.start][region.cols.clone()],
+            false,
+        ));
+        match self.seen.get(&first) {
+            Some(Seen::InListItem { .. }) => {
+                self.list_item(rows, region, ItemStart::Above, None);
+            }
+            Some(Seen::InTable(_)) => self.table(rows, region),
+            _ => self.left_as_drawn(rows, region),
+        }
+    }
+
+    /// Lays out one list item in place and returns its direction: the
+    /// marker and the indentation before it, then the item's text, row by
+    /// row. `list` is the direction of the item right above this one.
+    /// Returns `None`, with nothing changed, for rows an item wrapped onto
+    /// of which too little is known.
+    fn list_item(
+        &mut self,
+        rows: &mut [Row],
+        region: &Region,
+        start: ItemStart,
+        list: Option<Direction>,
+    ) -> Option<Direction> {
+        let area = region.cols.clone();
+        // As for a paragraph: an item that shares its rows with a line or
+        // the side of a box is not in an area of its own, and laying it
+        // out again would move the line. Neither app draws that today.
+        let holds_a_line = |row: usize| rows[row][area.clone()].iter().any(draws_a_line);
+        if region.rows.clone().any(holds_a_line) {
+            return None;
+        }
+        let keys: Vec<u64> = region
+            .rows
+            .clone()
+            .map(|row| key(&drawn_row(&rows[row][area.clone()], false)))
+            .collect();
+        // How far into the area the item's text starts, and the item's
+        // direction when it is known from an earlier look at these rows.
+        let (text, known) = match start {
+            ItemStart::Here { text_col } => (text_col.saturating_sub(area.start), None),
+            ItemStart::Above => match self.seen.get(&keys[0]) {
+                Some(Seen::InListItem { direction, text }) => (*text, Some(*direction)),
+                Some(_) => return None,
+                // An app that reorders drew these rows as text of their
+                // own, in an area that begins where the item's text does.
+                // Where that is, the marker would have told.
+                None if self.profile.reorders_farsi_itself() => return None,
+                // Rows in Logical order need only the item's direction.
+                None => (0, None),
+            },
+        };
+        let text = text.min(area.len());
+        let last = region.rows.end - 1;
+        let drawn: Vec<DrawnRow> = region
+            .rows
+            .clone()
+            .map(|row| drawn_row(&rows[row][area.start + text..area.end], row < last))
+            .collect();
+        let begins = match start {
+            ItemStart::Here { .. } => Start::Here,
+            ItemStart::Above => Start::Above(known),
+        };
+        let paragraph = if self.profile.reorders_farsi_itself() {
+            undo::paragraph(&drawn, area.len() - text, begins)
+        } else {
+            in_logical_order(&drawn, begins)
+        };
+        let written: Vec<Cell> = paragraph.rows.iter().flatten().flatten().cloned().collect();
+        let direction = match (known, layout::holds_a_letter(&written)) {
+            (Some(direction), _) => direction,
+            (None, true) => paragraph.direction,
+            (None, false) => layout::direction_of_an_item_with_no_letter(&written, list),
+        };
+
+        for ((row, logical), key) in region.rows.clone().zip(&paragraph.rows).zip(keys) {
+            self.remember(key, Seen::InListItem { direction, text });
+            let Some(logical) = logical else {
+                continue;
+            };
+            // The marker and what is before it, then the text.
+            let mut line = drawn_cells(&rows[row][area.start..area.start + text]);
+            line.extend(logical.iter().cloned());
+            // A left-to-right row with no Farsi in it is already what
+            // Layout would make of it.
+            if direction == Direction::LeftToRight && !layout::holds_right_to_left(&line) {
+                continue;
+            }
+            let line = layout::lay_out_line(&line, direction, area.len());
+            rows[row][area.clone()].clone_from_slice(&line.cells);
+        }
+        Some(direction)
     }
 
     /// Lays out one paragraph in place and returns its direction. Returns
@@ -270,7 +420,7 @@ impl Correction {
         if drawn.iter().any(|row| row.cells.iter().any(draws_a_line)) {
             if self.on_alternate_screen {
                 for row in &drawn {
-                    self.remember(row, Seen::NotInParagraph);
+                    self.remember(key(row), Seen::NotInParagraph);
                 }
             }
             return None;
@@ -283,12 +433,12 @@ impl Correction {
             // first time, with nothing on it or beside it that tells code,
             // it is taken for the line of prose it looks like.
             ParagraphStart::HereUnderLinesOutOfSight => match seen_before() {
-                Some(Seen::NotInParagraph) => return None,
-                _ => Start::Here,
+                Some(Seen::InParagraph(_)) | None => Start::Here,
+                Some(_) => return None,
             },
             ParagraphStart::Above if self.on_alternate_screen => match seen_before() {
-                Some(Seen::NotInParagraph) => return None,
                 Some(Seen::InParagraph(direction)) => Start::Above(Some(*direction)),
+                Some(_) => return None,
                 None => Start::Above(None),
             },
             ParagraphStart::Above => Start::Above(self.direction_above),
@@ -303,7 +453,7 @@ impl Correction {
 
         if self.on_alternate_screen && start == Start::Here {
             for row in &drawn {
-                self.remember(row, Seen::InParagraph(paragraph.direction));
+                self.remember(key(row), Seen::InParagraph(paragraph.direction));
             }
         }
         for (row, logical) in region.rows.clone().zip(&paragraph.rows) {

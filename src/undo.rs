@@ -22,13 +22,16 @@
 //! For those rows the step guesses the likelier reading from the paragraph
 //! the row is in. Every rule of the guess is in this file: `drawn_direction`
 //! for the first doubt, and for the other two the order in which `reading`
-//! tries its answers and `oddness_of_brackets`.
+//! tries its answers, `begins_a_size`, `oddness_of_numbers` and
+//! `oddness_of_brackets`. For numbers the guess is the reading in which
+//! they stand as people write them: «33 x 20» and not «x 20 33», «50%» and
+//! not «%50».
 //!
-//! The doubts only show when a row was drawn against its paragraph's
+//! The first doubt only shows when a row was drawn against its paragraph's
 //! direction, as a wrapped row that begins with an English word is in a
-//! Farsi paragraph. A row drawn the way its paragraph runs is laid out
-//! with every character where the app had it, whichever reading is taken,
-//! because Layout follows the same reordering rules.
+//! Farsi paragraph. The second shows wherever Layout has a rule of its own
+//! for the number: it shows a size in the order it was written, so it
+//! matters which order that was.
 
 use crate::layout::{self, Bearing, Direction, NumberMark};
 use crate::screen::{Cell, CellWidth};
@@ -67,6 +70,7 @@ pub(crate) struct Paragraph {
 /// Turns the rows of one paragraph back into Logical order. `width` is the
 /// width of the area the app wrapped the paragraph in.
 pub(crate) fn paragraph(rows: &[DrawnRow], width: usize, start: Start) -> Paragraph {
+    let drawn = rows;
     let rows: Vec<Row> = rows.iter().map(|row| Row::read(row, width)).collect();
 
     let direction = match start {
@@ -79,12 +83,17 @@ pub(crate) fn paragraph(rows: &[DrawnRow], width: usize, start: Start) -> Paragr
         }
         // The app takes a row's direction from the row's first letter, so
         // the direction it drew the paragraph's first letters in is the
-        // Paragraph direction.
+        // Paragraph direction. The app draws a paragraph with no letter in
+        // it, such as a number that stands alone, as it was written, and
+        // Layout has a rule for which way such a paragraph runs.
         _ => rows
             .iter()
             .find(|row| row.holds_a_letter)
             .and_then(|row| row.drawn_direction(None))
-            .unwrap_or(Direction::LeftToRight),
+            .unwrap_or_else(|| {
+                let written: Vec<Cell> = drawn.iter().flat_map(|row| row.cells.clone()).collect();
+                layout::paragraph_direction(&written)
+            }),
     };
 
     let rows = rows
@@ -104,6 +113,33 @@ pub(crate) fn paragraph(rows: &[DrawnRow], width: usize, start: Start) -> Paragr
         })
         .collect();
     Paragraph { direction, rows }
+}
+
+/// Every Logical order one row may have been written in, each as the
+/// row's cells in that order: one for each direction the app can have
+/// drawn the row in, the likelier first. For whoever can tell the right
+/// one by something the row itself does not show, as the borders of a
+/// table do.
+pub(crate) fn readings(row: &DrawnRow) -> Vec<Vec<Cell>> {
+    let read = Row::read(row, row.cells.len());
+    let cells = |order: &Option<Vec<usize>>| -> Option<Vec<Cell>> {
+        let order = order.as_ref()?;
+        Some(
+            order
+                .iter()
+                .flat_map(|unit| read.units[*unit].clone())
+                .map(|cell| read.cells[cell].clone())
+                .collect(),
+        )
+    };
+    let (first, second) = match read.drawn_direction(None) {
+        Some(Direction::LeftToRight) => (&read.left_to_right, &read.right_to_left),
+        _ => (&read.right_to_left, &read.left_to_right),
+    };
+    [cells(first), cells(second)]
+        .into_iter()
+        .flatten()
+        .collect()
 }
 
 /// A drawn row with its readings.
@@ -266,6 +302,11 @@ enum Side {
 /// more keeps the likeliest reading of the rest.
 const MOST_DOUBTS: usize = 10;
 
+/// How many of the signs beside a row's numbers are tried both ways, each
+/// with every other. A row with more has them all read one way, then all
+/// the other.
+const MOST_SIGNS: usize = 5;
+
 /// The Logical order of a screen row's characters, as positions in the
 /// row, if the app drew the row with the direction `drawn`. When more than
 /// one order gives the same screen row (the second doubt) this is the
@@ -279,44 +320,71 @@ fn reading(characters: &[char], drawn: Direction) -> Option<Vec<usize>> {
     if !may_be_drawn(characters, drawn) {
         return None;
     }
-    let pieces = pieces(characters);
-    let doubts: Vec<usize> = (0..pieces.len())
-        .filter(|at| matches!(pieces[*at].0, Piece::Digits | Piece::Bracket))
-        .take(MOST_DOUBTS)
-        .collect();
+    // A sign between two digits, or a sign such as % beside a number, is
+    // part of the number or stands by itself: that depends on the letter
+    // before the number in Logical order, which is what is being asked. So
+    // the row is read both ways for each of them. As part of its number
+    // comes first: `Python 50%` in a row drawn right to left is what the
+    // app draws for «Python 50%» and for «%Python 50», and the first is
+    // what people write.
+    let (always_in_a_number, may_be_in_a_number) = number_marks(characters);
+    let signs = may_be_in_a_number.len();
+    let every_way: Vec<Vec<bool>> = match signs {
+        0 => vec![Vec::new()],
+        1..=MOST_SIGNS => (0..1usize << signs)
+            .rev()
+            .map(|taken| (0..signs).map(|sign| taken >> sign & 1 == 1).collect())
+            .collect(),
+        _ => vec![vec![true; signs], vec![false; signs]],
+    };
 
-    // Likeliest first: every doubt read the likeliest way, then one read
-    // another way, then two.
-    let mut other_ways: Vec<Vec<(usize, Side)>> = vec![Vec::new()];
-    const WAYS: [Side; 2] = [Side::Left, Side::Right];
-    for (index, first) in doubts.iter().enumerate() {
-        for way in WAYS {
-            other_ways.push(vec![(*first, way)]);
-            for second in &doubts[index + 1..] {
-                for other in WAYS {
-                    other_ways.push(vec![(*first, way), (*second, other)]);
+    // The first order found whose brackets and numbers sit as people write
+    // them. Failing that, the one in which they are least odd.
+    let mut least_odd: Option<(usize, Vec<usize>)> = None;
+    for taken in &every_way {
+        let in_a_number = |at: usize| {
+            always_in_a_number.contains(&at)
+                || may_be_in_a_number
+                    .iter()
+                    .zip(taken)
+                    .any(|(places, taken)| *taken && places.contains(&at))
+        };
+        let pieces = pieces_where(characters, &in_a_number);
+        let doubts: Vec<usize> = (0..pieces.len())
+            .filter(|at| matches!(pieces[*at].0, Piece::Digits | Piece::Bracket))
+            .take(MOST_DOUBTS)
+            .collect();
+
+        // Likeliest first: every doubt read the likeliest way, then one
+        // read another way, then two.
+        let mut other_ways: Vec<Vec<(usize, Side)>> = vec![Vec::new()];
+        const WAYS: [Side; 2] = [Side::Left, Side::Right];
+        for (index, first) in doubts.iter().enumerate() {
+            for way in WAYS {
+                other_ways.push(vec![(*first, way)]);
+                for second in &doubts[index + 1..] {
+                    for other in WAYS {
+                        other_ways.push(vec![(*first, way), (*second, other)]);
+                    }
                 }
             }
         }
-    }
-    other_ways.sort_by_key(Vec::len);
+        other_ways.sort_by_key(Vec::len);
 
-    // The first order found whose brackets sit as brackets are written.
-    // Failing that, the one whose brackets are least odd.
-    let mut least_odd: Option<(usize, Vec<usize>)> = None;
-    for told in &other_ways {
-        let levels = levels(&pieces, drawn, told);
-        let order = logical_order(&levels);
-        if !checks_out(characters, &order, drawn) {
-            continue;
-        }
-        let logical: Vec<char> = order.iter().map(|at| characters[*at]).collect();
-        match oddness_of_brackets(&logical) {
-            0 => return Some(order),
-            oddness if least_odd.as_ref().is_none_or(|(least, _)| oddness < *least) => {
-                least_odd = Some((oddness, order))
+        for told in &other_ways {
+            let levels = levels(&pieces, characters, drawn, told);
+            let order = logical_order(&levels);
+            if !checks_out(characters, &order, drawn) {
+                continue;
             }
-            _ => {}
+            let logical: Vec<char> = order.iter().map(|at| characters[*at]).collect();
+            match oddness_of_brackets(&logical) + oddness_of_numbers(&logical) {
+                0 => return Some(order),
+                oddness if least_odd.as_ref().is_none_or(|(least, _)| oddness < *least) => {
+                    least_odd = Some((oddness, order))
+                }
+                _ => {}
+            }
         }
     }
     least_odd.map(|(_, order)| order)
@@ -381,7 +449,7 @@ pub(crate) fn only_order(characters: &[char]) -> Option<Vec<usize>> {
                     .zip(&chosen)
                     .map(|(piece, way)| (*piece, ways(*piece)[*way]))
                     .collect();
-                let order = logical_order(&levels(&pieces, drawn, &told));
+                let order = logical_order(&levels(&pieces, characters, drawn, &told));
                 if checks_out(characters, &order, drawn) {
                     match &found {
                         Some(other) if *other != order => return None,
@@ -500,13 +568,30 @@ fn oddness_of_brackets(text: &[char]) -> usize {
     oddness + open.len() * NO_PARTNER
 }
 
-/// A screen row cut into pieces, each with how many characters it holds.
-fn pieces(characters: &[char]) -> Vec<(Piece, usize)> {
-    pieces_where(characters, &|_| false)
+/// How far the numbers of a text are from the way numbers are written: a
+/// percent sign right after its number, a currency sign right before it.
+/// Zero when every such sign stands so.
+///
+/// `Python %50` in a row drawn right to left is what the app draws for
+/// «50% Python» and for «Python %50», and `abc 5$` for «$5 abc» and for
+/// «$abc 5». This is what tells them apart.
+fn oddness_of_numbers(text: &[char]) -> usize {
+    let is_digit = |at: Option<usize>| {
+        at.and_then(|at| text.get(at))
+            .is_some_and(|c| layout::bearing(*c) == Bearing::Digit)
+    };
+    (0..text.len())
+        .filter(|at| match text[*at] {
+            '%' | '٪' | '‰' => !is_digit(at.checked_sub(1)),
+            '$' | '€' | '£' | '¥' => !is_digit(Some(at + 1)),
+            _ => false,
+        })
+        .count()
 }
 
-/// The same, with the marks at the places `in_a_number` names counted as
-/// digits of the number they stand in or beside.
+/// A screen row cut into pieces, each with how many characters it holds.
+/// The marks at the places `in_a_number` names are counted as digits of the
+/// number they stand in or beside.
 fn pieces_where(characters: &[char], in_a_number: &dyn Fn(usize) -> bool) -> Vec<(Piece, usize)> {
     let mut pieces: Vec<(Piece, usize)> = Vec::new();
     for (at, character) in characters.iter().enumerate() {
@@ -535,8 +620,15 @@ fn pieces_where(characters: &[char], in_a_number: &dyn Fn(usize) -> bool) -> Vec
 /// - A number that stands right after an English word, as in `Python 3`,
 ///   belongs to that word and reads left to right with it. Any other number
 ///   is a number in the Farsi text and counts with the right-to-left text.
+/// - But the number a size begins with is a number in the Farsi text: see
+///   `begins_a_size`.
 /// - A bracket takes its direction from its neighbours, like a space.
-fn sides(pieces: &[(Piece, usize)], drawn: Direction, told: &[(usize, Side)]) -> Vec<Side> {
+fn sides(
+    pieces: &[(Piece, usize)],
+    characters: &[char],
+    drawn: Direction,
+    told: &[(usize, Side)],
+) -> Vec<Side> {
     let edge = match drawn {
         Direction::LeftToRight => Side::Left,
         Direction::RightToLeft => Side::Right,
@@ -554,6 +646,11 @@ fn sides(pieces: &[(Piece, usize)], drawn: Direction, told: &[(usize, Side)]) ->
             Piece::Right => Side::Right,
             Piece::Gap => Side::Neutral,
             Piece::Bracket => told.unwrap_or(Side::Neutral),
+            Piece::Digits
+                if drawn == Direction::RightToLeft && begins_a_size(pieces, characters, at) =>
+            {
+                told.unwrap_or(Side::Right)
+            }
             Piece::Digits => told.unwrap_or(before),
         };
         if side != Side::Neutral {
@@ -564,13 +661,41 @@ fn sides(pieces: &[(Piece, usize)], drawn: Direction, told: &[(usize, Side)]) ->
     sides
 }
 
+/// The guess that keeps the numbers of a size in the order a person writes
+/// them. In a row drawn right to left the app draws «33 x 20» as `x 20 33`:
+/// the letter takes the number after it along, and the number before it is
+/// left behind, on the far side. It draws «x 20 33» the same way, and the
+/// screen does not say which was written. A lone `x` with two numbers after
+/// it is far more often a size than a word followed by two numbers, so the
+/// second of the two numbers is taken to be the one the size begins with.
+/// The same holds for the last number after a longer size, as in
+/// `x 32 x 3 128` for «128 x 32 x 3».
+///
+/// `at` is the place of a number among the pieces of the screen row.
+fn begins_a_size(pieces: &[(Piece, usize)], characters: &[char], at: usize) -> bool {
+    if at < 4 {
+        return false;
+    }
+    let start = |piece: usize| pieces[..piece].iter().map(|(_, len)| len).sum::<usize>();
+    let text = |piece: usize| &characters[start(piece)..start(piece) + pieces[piece].1];
+    let is_space = |piece: usize| text(piece).iter().all(|c| *c == ' ');
+    let is_times =
+        |piece: usize| pieces[piece].0 == Piece::Left && matches!(text(piece), ['x'] | ['X']);
+    is_space(at - 1) && pieces[at - 2].0 == Piece::Digits && is_space(at - 3) && is_times(at - 4)
+}
+
 /// How deep each character of a screen row sits in runs of text that
 /// alternate in direction, if the row was drawn with the direction `drawn`
 /// and its pieces are read as `told`. These are the levels of the Unicode
 /// reordering rules, worked out from the screen instead of from Logical
 /// order.
-fn levels(pieces: &[(Piece, usize)], drawn: Direction, told: &[(usize, Side)]) -> Vec<u8> {
-    let sides = sides(pieces, drawn, told);
+fn levels(
+    pieces: &[(Piece, usize)],
+    characters: &[char],
+    drawn: Direction,
+    told: &[(usize, Side)],
+) -> Vec<u8> {
+    let sides = sides(pieces, characters, drawn, told);
     // The level of the row itself, of text running against it, and the
     // side that text is on.
     let (base, against_level, against) = match drawn {

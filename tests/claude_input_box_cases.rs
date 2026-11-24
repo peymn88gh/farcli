@@ -608,9 +608,14 @@ fn any_message_typed_key_by_key_reads_as_typed_after_every_key() {
             keys += 1;
 
             // The message takes the direction of its first letter, once it
-            // has one.
+            // has one. Until then it stays where the app drew it, also
+            // when its digits are Farsi ones: Layout's rule for a paragraph
+            // with no letter is not applied in the Input box.
             let so_far: String = message.chars().take(keys).collect();
-            let direction = claude_code::direction_of(&so_far);
+            let direction = match so_far.contains(char::is_alphabetic) {
+                true => claude_code::direction_of(&so_far),
+                false => LeftToRight,
+            };
             let as_typed: Vec<String> = app
                 .rows_as_typed()
                 .iter()

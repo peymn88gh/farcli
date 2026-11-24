@@ -1,6 +1,6 @@
 //! Region finder: splits what a Target app drew into regions: the app's
-//! interface, Agent output paragraphs, code, lists, tables and the Input
-//! box.
+//! interface, Agent output paragraphs, code, list items, tables and the
+//! Input box.
 //!
 //! How a screen is read depends on the Target app, so each app has its own
 //! finder. They all answer in the terms of this file. Rows that are in no
@@ -84,6 +84,10 @@ pub(crate) struct Region {
     /// The columns of the area the app drew it in.
     pub cols: Range<usize>,
     pub kind: Kind,
+    /// The region is in the first part of a reply among the rows given,
+    /// and that part may have begun above them, out of sight: what told
+    /// the finder what its rows are may be up there.
+    pub cut_above: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,9 +98,11 @@ pub(crate) enum Kind {
     Paragraph(ParagraphStart),
     /// A code block. Code is always left to right and stays as drawn.
     Code,
-    /// List items, with the rows they wrap onto.
-    List,
-    /// A table with its borders.
+    /// One item of a list: its marker and, after the marker, a paragraph
+    /// that carries on under its own text on the rows the app wrapped it
+    /// onto.
+    ListItem(ItemStart),
+    /// A table with its borders, from its first row to its last.
     Table,
     /// A message the user sent, as the app shows it in the conversation.
     SentMessage,
@@ -119,5 +125,17 @@ pub(crate) enum ParagraphStart {
     HereUnderLinesOutOfSight,
     /// It began above the first row given: its first rows have scrolled
     /// out of sight.
+    Above,
+}
+
+/// Where a list item begins, as far as the rows given show.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ItemStart {
+    /// The region's first row holds the item's marker. The item's text
+    /// starts in the column `text_col` of the screen, on that row and on
+    /// every row the item wraps onto.
+    Here { text_col: usize },
+    /// The marker is above the first row given: these are rows the item
+    /// wrapped onto.
     Above,
 }
