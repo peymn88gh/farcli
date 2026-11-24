@@ -382,15 +382,59 @@ fn switched_off_from_the_start_a_recorded_session_shows_what_the_app_drew_at_eve
             "{name}"
         );
         // The app is sent what it is sent with the correction on, in a
-        // session that the correction does change.
+        // session that the correction does change. All but the Left and
+        // Right arrows: in Claude Code's Input box those mean sides of the
+        // screen while the correction is on, and with it off the user sees
+        // the app's own cursor, so they reach the app as they were pressed.
         let mut corrected = 0;
         let on = play(&recording, &[], |_, run| {
             corrected +=
                 usize::from(!run.session.holding_frame() && !run.shows_what_the_app_drew());
         });
-        assert_eq!(off.app_received, on.app_received, "{name}");
+        let (arrows_when_off, the_rest_when_off) = arrows_and_the_rest(&off.app_received);
+        let (_, the_rest_when_on) = arrows_and_the_rest(&on.app_received);
+        assert_eq!(the_rest_when_off, the_rest_when_on, "{name}");
+        let pressed: Vec<u8> = recording
+            .events
+            .iter()
+            .filter_map(|(_, event)| match event {
+                Event::UserTyped(bytes) => Some(bytes.clone()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert_eq!(arrows_when_off, arrows_and_the_rest(&pressed).0, "{name}");
         assert!(corrected > 0, "{name}");
     }
+}
+
+/// The codes of the Left and Right arrow keys in `sent`, going down or
+/// coming up (`ESC [ 37 ; ... _` and `ESC [ 39 ; ... _`), and `sent` without
+/// them.
+fn arrows_and_the_rest(sent: &[u8]) -> (Vec<String>, String) {
+    let sent = String::from_utf8_lossy(sent);
+    let (mut arrows, mut rest) = (Vec::new(), String::new());
+    for (index, piece) in sent.split("\x1b[").enumerate() {
+        let key_code = piece.find('_').filter(|end| {
+            let numbers = &piece[..*end];
+            (numbers.starts_with("37;") || numbers.starts_with("39;"))
+                && numbers
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || byte == b';')
+        });
+        match (index, key_code) {
+            (0, _) => rest.push_str(piece),
+            (_, Some(end)) => {
+                arrows.push(piece[..end].to_string());
+                rest.push_str(&piece[end + 1..]);
+            }
+            (_, None) => {
+                rest.push_str("\x1b[");
+                rest.push_str(piece);
+            }
+        }
+    }
+    (arrows, rest)
 }
 
 #[test]

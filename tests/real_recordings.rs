@@ -241,7 +241,7 @@ fn every_recording_replays_through_the_session_and_rows_without_farsi_stay_as_th
 }
 
 #[test]
-fn every_key_the_user_pressed_reaches_the_app_unchanged() {
+fn every_key_but_an_arrow_in_claude_codes_input_box_reaches_the_app_unchanged() {
     for name in all_names() {
         let recording = load(name);
         let typed: Vec<u8> = recording
@@ -278,8 +278,44 @@ fn every_key_the_user_pressed_reaches_the_app_unchanged() {
             let start = received[..end].rfind("\x1b[").unwrap();
             received.replace_range(start..=end, "");
         }
-        assert_eq!(received.as_bytes(), typed, "{name}");
+        // In Claude Code's Input box, shown as a text field, Left and Right
+        // mean sides of the screen, and the app is sent the arrow keys that
+        // take its cursor there. Every other key reaches it as it came, and
+        // so does every key of any other app.
+        if name.starts_with("claude-") {
+            assert_eq!(
+                without_the_arrows(&received),
+                without_the_arrows(&String::from_utf8_lossy(&typed)),
+                "{name}"
+            );
+        } else {
+            assert_eq!(received.as_bytes(), typed, "{name}");
+        }
     }
+}
+
+/// `sent` without the Left and Right arrow keys, going down or coming up:
+/// the codes `ESC [ 37 ; ... _` and `ESC [ 39 ; ... _`.
+fn without_the_arrows(sent: &str) -> String {
+    let mut kept = String::new();
+    for (index, piece) in sent.split("\x1b[").enumerate() {
+        let key_code = piece.find('_').filter(|end| {
+            let numbers = &piece[..*end];
+            (numbers.starts_with("37;") || numbers.starts_with("39;"))
+                && numbers
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || byte == b';')
+        });
+        match (index, key_code) {
+            (0, _) => kept.push_str(piece),
+            (_, Some(end)) => kept.push_str(&piece[end + 1..]),
+            (_, None) => {
+                kept.push_str("\x1b[");
+                kept.push_str(piece);
+            }
+        }
+    }
+    kept
 }
 
 #[test]

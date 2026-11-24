@@ -1339,3 +1339,32 @@ fn a_space_left_alone_in_the_box_is_still_there_when_text_is_pasted_before_it() 
     app.presses(Key::Right);
     assert_eq!(app.character_under_the_cursor(), 'w');
 }
+
+#[test]
+fn with_alt_held_the_arrows_go_a_word_to_the_side_they_point_to_as_with_ctrl() {
+    let mut app = ClaudeCode::start(40, 10);
+    app.types("سلام world خوبی");
+    let end = left_of(15, 40);
+    // Alt goes down, the arrow goes down and comes up with Alt held, Alt
+    // comes up.
+    let with_alt = |number: u32, scan: u32| {
+        format!(
+            "\x1b[18;56;0;1;2;1_\x1b[{number};{scan};0;1;258;1_\x1b[{number};{scan};0;0;258;1_\x1b[18;56;0;0;0;1_"
+        )
+    };
+    let (alt_left, alt_right) = (with_alt(37, 75), with_alt(39, 77));
+
+    // The app takes an arrow with Alt as it takes one with Ctrl. A word to
+    // the right is a word back: the other arrow, with Alt still held.
+    let forwarded = app.press_as(&alt_right);
+    app.handles(1);
+
+    assert_eq!(forwarded, alt_left);
+    assert_eq!(app.cursor(), at(0, end + 4));
+
+    let forwarded = app.press_as(&alt_left);
+    app.handles(1);
+
+    assert_eq!(forwarded, alt_right);
+    assert_eq!(app.cursor(), at(0, end));
+}
