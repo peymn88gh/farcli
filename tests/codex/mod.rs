@@ -103,6 +103,12 @@ pub fn sent_start(text: &str) -> String {
     on_background(&format!("\x1b[1;2m› \x1b[22m{text}"), (50, 50, 50))
 }
 
+/// The first row of a message the user spoke: Codex draws its mark bold
+/// and red.
+pub fn spoken_start(text: &str) -> String {
+    on_background(&format!("\x1b[1;31m› \x1b[22;39m{text}"), (50, 50, 50))
+}
+
 /// Any other row of the message the user sent.
 pub fn sent_row(text: &str) -> String {
     on_background(&format!("  {text}"), (50, 50, 50))

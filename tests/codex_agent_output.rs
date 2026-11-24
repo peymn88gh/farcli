@@ -10,8 +10,8 @@ mod codex;
 
 use codex::{
     at_right_edge, bold, coloured, dim, from_the_right, input_box, italic, on_row, reply_row,
-    reply_start, screen, sent_row, sent_start, status_row, Run, COMMENT, HEADING, MARKER, STRING,
-    WORD,
+    reply_start, screen, sent_row, sent_start, spoken_start, status_row, Run, COMMENT, HEADING,
+    MARKER, STRING, WORD,
 };
 use farcli::screen::Color;
 
@@ -334,6 +334,28 @@ fn what_codex_draws_under_the_input_box_stays_as_drawn() {
     for row in 2..5 {
         assert!(run.row_is_as_drawn(row), "row {row}: {}", run.row(row));
     }
+}
+
+#[test]
+fn only_the_last_prompt_mark_on_the_screen_is_the_input_boxs() {
+    let mut run = Run::start(30, 8);
+
+    // A message the user spoke has a bold mark that is not dim, like the
+    // Input box's. It is not the Input box: that is further down.
+    run.app_writes(screen(&[
+        spoken_start("پیام کاربر"),
+        String::new(),
+        reply_start("سلام دنیا"),
+        String::new(),
+        input_box(""),
+        status_row(),
+    ]));
+
+    assert!(run.row_is_as_drawn(0));
+    assert_eq!(
+        run.row(2),
+        from_right_edge("• ", &from_the_right("ﺳﻠﺎﻡ ﺩﻧﯿﺎ"))
+    );
 }
 
 #[test]

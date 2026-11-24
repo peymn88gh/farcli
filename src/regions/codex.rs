@@ -7,9 +7,12 @@
 //!   by an empty row.
 //! - A message the user sent, and the Input box, are drawn on a background
 //!   of their own that fills each row, with the prompt mark in the first
-//!   column. The Input box's mark is bold; a sent message's is bold and
-//!   dim. Everything from the Input box to the bottom of the screen is the
-//!   app's interface.
+//!   column. The Input box is the last of them, and its mark is bold where
+//!   a sent message's is bold and dim. Everything from the Input box to the
+//!   bottom of the screen is the app's interface. What follows a sent
+//!   message is the reply to it. Codex draws the backgrounds only when the
+//!   Terminal has told it its colours; without them a sent message is told
+//!   by its mark alone.
 //! - Any other row with something in its first two columns is the app's
 //!   interface: a tool call, the line that says the app is working, a
 //!   notice. Rows under it that start further in belong to it.
@@ -97,11 +100,8 @@ enum Shape {
     /// Something with a background of its own is drawn on the row.
     Covered,
     ReplyHead,
-    /// A prompt mark with no background: a sent message when `sent`, the
-    /// Input box otherwise.
-    PromptHead {
-        sent: bool,
-    },
+    /// A prompt mark with no background: a sent message, or the Input box.
+    PromptHead,
     /// Nothing in the first two columns, and text further on.
     Indented,
     Other,
@@ -152,6 +152,10 @@ impl Finder {
             head: None,
             covered_from: None,
             span_start: 0,
+            input_box_mark: rows
+                .iter()
+                .rposition(|row| holds_prompt_mark(row))
+                .filter(|last| is_input_box_mark(&rows[*last][0])),
         };
         let mut state_at_split = self.above;
         for at in 0..rows.len() {
@@ -206,6 +210,11 @@ struct Walk<'a> {
     /// Where the sent message or Input box being gathered starts, when its
     /// mark is what told.
     span_start: usize,
+    /// The row that holds the Input box's mark: the last prompt mark among
+    /// the rows given, unless it is drawn as a sent message's is. The Input
+    /// box is under everything else, so a prompt mark above another is a
+    /// message the user sent, however it is drawn.
+    input_box_mark: Option<usize>,
 }
 
 impl Walk<'_> {
@@ -243,9 +252,12 @@ impl Walk<'_> {
                 self.head = Some(at);
                 self.block.push(at);
             }
-            Shape::PromptHead { sent } => {
+            Shape::PromptHead => {
                 self.close(at);
-                self.state = if sent { Above::Sent } else { Above::InputBox };
+                self.state = match self.input_box_mark == Some(at) {
+                    true => Above::InputBox,
+                    false => Above::Sent,
+                };
                 self.span_start = at;
             }
             Shape::Other => {
@@ -271,7 +283,10 @@ impl Walk<'_> {
             return;
         };
         let rows = &self.rows[start..end];
-        if rows.iter().any(|row| holds_input_box_mark(row)) {
+        if self
+            .input_box_mark
+            .is_some_and(|at| (start..end).contains(&at))
+        {
             self.state = Above::InputBox;
             self.span_start = start;
             return;
@@ -442,14 +457,18 @@ fn has_background(cell: &Cell) -> bool {
     !cell.is_left_alone() && (cell.style.background != Color::Default || cell.style.inverse)
 }
 
-/// True for a row on a background that holds the Input box's mark: bold,
-/// where a sent message's is bold and dim. A box that takes no input has a
-/// dim mark that is not bold.
-fn holds_input_box_mark(row: &[Cell]) -> bool {
-    let mark = &row[0];
-    PROMPT_MARKS.contains(&mark.character)
+/// True for a row that begins with a prompt mark.
+fn holds_prompt_mark(row: &[Cell]) -> bool {
+    row.first()
+        .is_some_and(|mark| PROMPT_MARKS.contains(&mark.character))
         && row.get(1).is_some_and(is_empty)
-        && !(mark.style.bold && mark.style.dim)
+}
+
+/// True for a prompt mark drawn as the Input box's is: bold, where the mark
+/// of a message the user typed and sent is bold and dim. A box that takes
+/// no input has a dim mark that is not bold.
+fn is_input_box_mark(mark: &Cell) -> bool {
+    !(mark.style.bold && mark.style.dim)
 }
 
 /// True when something with a background of its own is drawn on the row.
@@ -471,10 +490,8 @@ fn shape(row: &[Cell]) -> Shape {
     let then_empty = row.get(1).is_some_and(is_empty);
     if first == 0 && mark.character == REPLY_MARK && mark.style.dim && then_empty {
         Shape::ReplyHead
-    } else if first == 0 && PROMPT_MARKS.contains(&mark.character) && then_empty {
-        Shape::PromptHead {
-            sent: mark.style.bold && mark.style.dim,
-        }
+    } else if holds_prompt_mark(row) {
+        Shape::PromptHead
     } else {
         Shape::Other
     }
