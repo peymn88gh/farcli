@@ -105,6 +105,12 @@ const MOST_WAITING_TRIED_WITHOUT_THE_OLDEST: usize = 64;
 /// have deleted.
 const LONGEST_TRIED_FOR_A_DELETION: usize = 2000;
 
+/// When the app's cursor may not have been where farcli believed, the keys
+/// waiting are tried from every place in the message, for as many of them
+/// as the app may have handled. No more tries than this are made for one
+/// frame: a few keys in a long message, or many in a short one.
+const MOST_PLACES_TRIED_FROM: usize = 20_000;
+
 /// One thing the user did to the message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Edit {
@@ -158,6 +164,11 @@ struct Message {
 impl Message {
     /// Does `edit` to the message. False when the result cannot be told.
     fn apply(&mut self, edit: Edit) -> bool {
+        // A key that changes the message does so at the cursor. With the
+        // cursor a guess, what it leaves is a guess too.
+        if self.cursor_is_a_guess && !matches!(edit, Edit::Back | Edit::On | Edit::Other) {
+            return false;
+        }
         match edit {
             Edit::Insert(character) if layout::takes_no_cell(character) => {
                 // It rides on the character before the cursor.
@@ -273,7 +284,9 @@ impl InputBox {
     }
 
     /// The app's arrow key, and how many presses of it, that take the
-    /// cursor one place towards `side` on screen.
+    /// cursor one place towards `side` on screen. No press at all when
+    /// there is no place on that side and the app's own key would move the
+    /// cursor.
     fn keys_towards(&self, side: Side) -> (Side, usize) {
         let Some(expected) = self.expected() else {
             return (side, 1);
@@ -292,12 +305,21 @@ impl InputBox {
         match editing_keys::beside(&rows, from, side) {
             Some(to) if place(to) < place(from) => (Side::Left, place(from) - place(to)),
             Some(to) => (Side::Right, place(to) - place(from)),
-            // At the start or the end of the message: the key that would go
-            // on the same way, which the app does nothing for.
-            None => match editing_keys::leads_onwards(rows[from.0].direction, side) {
-                true => (Side::Right, 1),
-                false => (Side::Left, 1),
-            },
+            // Nothing is on that side: the cursor is at the edge of the
+            // first row or of the last. At the start or the end of the
+            // message the app is sent its key that would go on the same
+            // way, which it does nothing for there. Anywhere else that key
+            // would move its cursor: the first row of a Farsi message that
+            // starts with a number has the number's last digit at its
+            // edge, not its first.
+            None => {
+                let cursor = place(from);
+                match editing_keys::leads_onwards(rows[from.0].direction, side) {
+                    true if cursor == expected.message.units.len() => (Side::Right, 1),
+                    false if cursor == 0 => (Side::Left, 1),
+                    _ => (side, 0),
+                }
+            }
         }
     }
 
@@ -312,8 +334,8 @@ impl InputBox {
     }
 
     /// The message as it will be when the app has handled every key it was
-    /// sent, on the rows farcli last showed it on. `None` while the box is
-    /// not shown as a text field.
+    /// sent, as far as that can be told, on the rows farcli last showed it
+    /// on. `None` while the box is not shown as a text field.
     fn expected(&self) -> Option<Expected> {
         let mut message = self.known.clone()?;
         let mut rows = self.shown.clone()?;
@@ -330,9 +352,9 @@ impl InputBox {
                 Edit::Delete => cursor == length || !ends_a_row(cursor),
                 Edit::Insert(_) | Edit::Back | Edit::On => true,
             };
-            if !message.apply(*edit) {
-                return None;
-            }
+            // A key whose doing cannot be told leaves the message as it
+            // was, here, and the rows no longer certain.
+            rows_are_certain &= message.apply(*edit);
             // A character typed or deleted is taken to stay on the row the
             // cursor was on, and the rows after it to hold what they held.
             match message.units.len().cmp(&length) {
@@ -491,7 +513,7 @@ impl InputBox {
                 .collect()
         };
         let cursor = place.cursor.filter(|_| !place.is_empty);
-        let reading = self.read(&screen, cursor)?;
+        let reading = self.read(&screen, cursor, place.wrap_width)?;
         let message = self.known.as_ref()?;
         let directions = directions(&message.units, &reading, &screen, place.wrap_width);
 
@@ -546,15 +568,20 @@ impl InputBox {
 
     /// Works out which message the screen shows and how each of its rows
     /// reads, and keeps the message. `None` when it cannot be told.
-    fn read(&mut self, screen: &[Drawn], cursor: Option<(usize, usize)>) -> Option<Reading> {
-        if let Some((message, reading, borne_out)) = self.believed(screen, cursor) {
+    fn read(
+        &mut self,
+        screen: &[Drawn],
+        cursor: Option<(usize, usize)>,
+        wrap_width: usize,
+    ) -> Option<Reading> {
+        if let Some((message, reading, borne_out)) = self.believed(screen, cursor, wrap_width) {
             self.waiting.drain(..borne_out);
             self.keep(message, &reading);
             return Some(reading);
         }
         // The keys do not explain the screen. It is its only witness now.
         let units = read_from_screen(screen)?;
-        let reading = read_as(&units, screen, cursor)?;
+        let reading = read_as(&units, screen, cursor, wrap_width)?;
         self.waiting.clear();
         self.keep(
             Message {
@@ -586,6 +613,7 @@ impl InputBox {
         &self,
         screen: &[Drawn],
         cursor: Option<(usize, usize)>,
+        wrap_width: usize,
     ) -> Option<(Message, Reading, usize)> {
         let known = self.known.as_ref()?;
         let on_screen: usize = screen.iter().map(Drawn::characters_that_show).sum();
@@ -593,7 +621,7 @@ impl InputBox {
             if message.characters_that_show() != on_screen {
                 return None;
             }
-            let reading = read_as(&message.units, screen, cursor)?;
+            let reading = read_as(&message.units, screen, cursor, wrap_width)?;
             let cursor_agrees = message.cursor_is_a_guess
                 || reading.cursor.is_none()
                 || reading.cursor == Some(message.cursor);
@@ -603,23 +631,41 @@ impl InputBox {
         // The message after each of the keys waiting, oldest first. The
         // latest that the screen bears out, cursor and all, is the one the
         // app has drawn. Failing that, the latest whose text it bears out.
+        //
+        // A key that changes the message can leave the screen as it was:
+        // a space typed or deleted at the end of a row is not drawn. The
+        // screen then bears the key out only by where its cursor is. With
+        // the cursor elsewhere, nothing says the app has handled that key,
+        // nor any key after it.
         let mut best: Option<(Message, Reading, usize, bool)> = None;
         let mut message = known.clone();
+        let (mut borne_out_before, mut only_the_cursor_says) = (false, false);
         for done in 0..=self.waiting.len() {
-            if done > 0 && !message.apply(self.waiting[done - 1]) {
+            let edit = done.checked_sub(1).map(|last| self.waiting[last]);
+            if edit.is_some_and(|edit| !message.apply(edit)) {
                 break;
             }
-            if let Some((reading, cursor_agrees)) = borne_out(&message) {
-                if cursor_agrees || best.as_ref().is_none_or(|(.., agreed)| !agreed) {
-                    best = Some((message.clone(), reading, done, cursor_agrees));
-                }
+            let Some((reading, cursor_agrees)) = borne_out(&message) else {
+                borne_out_before = false;
+                continue;
+            };
+            let moves_the_cursor_only =
+                matches!(edit, None | Some(Edit::Back | Edit::On | Edit::Other));
+            only_the_cursor_says |= borne_out_before && !moves_the_cursor_only;
+            borne_out_before = true;
+            let is_better = best.as_ref().is_none_or(|(.., agreed)| !agreed);
+            if cursor_agrees || (is_better && !only_the_cursor_says) {
+                best = Some((message.clone(), reading, done, cursor_agrees));
             }
         }
         if let Some((message, reading, done, _)) = best {
             return Some((message, reading, done));
         }
-        if let Some((message, reading)) = self.after_a_deletion(known, &borne_out) {
-            return Some((message, reading, self.waiting.len()));
+        if let Some(believed) = self.done_from_another_place(known, &borne_out) {
+            return Some(believed);
+        }
+        if let Some(believed) = self.after_a_deletion(known, &borne_out) {
+            return Some(believed);
         }
 
         // Keys that went to something else the app was showing never
@@ -641,16 +687,77 @@ impl InputBox {
         None
     }
 
+    /// The message believed, if the app's cursor was not where farcli
+    /// believed it when it handled the keys waiting. That happens after a
+    /// key farcli does not follow that moved the cursor, when keys that
+    /// change the message came after it before the app drew: Home and a
+    /// letter, a word jump and Backspace. It also happens after arrow keys
+    /// of which the app had handled fewer, when it drew, than farcli took
+    /// it to have.
+    ///
+    /// What the app drew is the message with those keys done from some one
+    /// place, as many of them as it has handled, and its cursor where they
+    /// leave it, or it is not. Returns how many of the keys waiting that
+    /// bears out.
+    fn done_from_another_place(
+        &self,
+        known: &Message,
+        borne_out: &dyn Fn(&Message) -> Option<(Reading, bool)>,
+    ) -> Option<(Message, Reading, usize)> {
+        // Up to the last key farcli does not follow, the keys were done
+        // where farcli believes. That key may have left the cursor
+        // anywhere.
+        let from = self
+            .waiting
+            .iter()
+            .rposition(|edit| *edit == Edit::Other)
+            .map_or(0, |key| key + 1);
+        let mut before = known.clone();
+        for edit in &self.waiting[..from] {
+            if !before.apply(*edit) {
+                return None;
+            }
+        }
+        let after = self.waiting.len() - from;
+        if after * (before.units.len() + 1) > MOST_PLACES_TRIED_FROM {
+            return None;
+        }
+        before.cursor_is_a_guess = false;
+        // The most keys first: the app has usually handled them all.
+        for done in (from + 1..=self.waiting.len()).rev() {
+            'places: for cursor in 0..=before.units.len() {
+                let mut message = before.clone();
+                message.cursor = cursor;
+                for edit in &self.waiting[from..done] {
+                    if !message.apply(*edit) {
+                        continue 'places;
+                    }
+                }
+                match borne_out(&message) {
+                    Some((reading, _))
+                        if reading.cursor.is_none_or(|cursor| cursor == message.cursor) =>
+                    {
+                        return Some((message, reading, done))
+                    }
+                    _ => {}
+                }
+            }
+        }
+        None
+    }
+
     /// The message believed, if the last key farcli does not follow
     /// deleted what stood on one side of the cursor: the word before it,
     /// the line up to it, the rest of the line. Which key deletes what is
     /// the app's business. What it drew is the message with one stretch
-    /// next to the cursor gone, or it is not.
+    /// next to the cursor gone, and as many of the keys after that one done
+    /// as it has handled, or it is not. Returns how many of the keys
+    /// waiting that bears out.
     fn after_a_deletion(
         &self,
         known: &Message,
         borne_out: &dyn Fn(&Message) -> Option<(Reading, bool)>,
-    ) -> Option<(Message, Reading)> {
+    ) -> Option<(Message, Reading, usize)> {
         let key = self.waiting.iter().rposition(|edit| *edit == Edit::Other)?;
         let mut before = known.clone();
         for edit in &self.waiting[..key] {
@@ -661,25 +768,36 @@ impl InputBox {
         if before.units.len() > LONGEST_TRIED_FOR_A_DELETION {
             return None;
         }
-        // The shortest stretch first: before the cursor, then after it.
+        // All the keys after it first: the app has usually handled them
+        // all. In a long message with many keys waiting, only that.
+        let after = self.waiting.len() - (key + 1);
+        let fewest = match after * (before.units.len() + 1) > MOST_PLACES_TRIED_FROM {
+            true => self.waiting.len(),
+            false => key + 1,
+        };
         let cursor = before.cursor;
-        let before_the_cursor = (0..cursor).rev().map(|from| from..cursor);
-        let after_the_cursor = (cursor + 1..=before.units.len()).map(|to| cursor..to);
-        'stretches: for gone in before_the_cursor.chain(after_the_cursor) {
-            let mut message = before.clone();
-            message.cursor = gone.start;
-            message.units.drain(gone);
-            for edit in &self.waiting[key + 1..] {
-                if !message.apply(*edit) {
-                    continue 'stretches;
+        for done in (fewest..=self.waiting.len()).rev() {
+            // The shortest stretch first: before the cursor, then after it.
+            let before_the_cursor = (0..cursor).rev().map(|from| from..cursor);
+            let after_the_cursor = (cursor + 1..=before.units.len()).map(|to| cursor..to);
+            'stretches: for gone in before_the_cursor.chain(after_the_cursor) {
+                let mut message = before.clone();
+                message.cursor = gone.start;
+                message.cursor_is_a_guess = false;
+                message.units.drain(gone);
+                for edit in &self.waiting[key + 1..done] {
+                    if !message.apply(*edit) {
+                        continue 'stretches;
+                    }
                 }
-            }
-            // The app's cursor has to be where the deletion left it.
-            match borne_out(&message) {
-                Some((reading, _)) if reading.cursor == Some(message.cursor) => {
-                    return Some((message, reading))
+                // The app's cursor has to be where the deletion, and the
+                // keys after it, left it.
+                match borne_out(&message) {
+                    Some((reading, _)) if reading.cursor == Some(message.cursor) => {
+                        return Some((message, reading, done))
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
         }
         None
@@ -838,11 +956,16 @@ enum End {
 /// Reads the rows on screen as the message `units`: the app, given this
 /// message, must have drawn exactly these rows. `None` when it would not.
 ///
-/// The app wraps the message onto rows, leaving the space it wrapped at on
-/// the end of the row, and draws each row in Screen order by the row's own
-/// first letter. It does not draw the spaces at the end of a row, except
-/// up to its cursor.
-fn read_as(units: &[Unit], screen: &[Drawn], cursor: Option<(usize, usize)>) -> Option<Reading> {
+/// The app wraps the message onto rows of `wrap_width` cells, leaving the
+/// space it wrapped at on the end of the row, and draws each row in Screen
+/// order by the row's own first letter. It does not draw the spaces at the
+/// end of a row, except up to its cursor.
+fn read_as(
+    units: &[Unit],
+    screen: &[Drawn],
+    cursor: Option<(usize, usize)>,
+    wrap_width: usize,
+) -> Option<Reading> {
     let mut reading = Reading {
         rows: Vec::with_capacity(screen.len()),
         cursor: None,
@@ -969,7 +1092,39 @@ fn read_as(units: &[Unit], screen: &[Drawn], cursor: Option<(usize, usize)>) -> 
             end,
         });
     }
-    (at == units.len()).then_some(reading)
+    if at != units.len() {
+        return None;
+    }
+
+    // The app wraps only a word that does not fit on the row, and cuts
+    // only a word that fills the row. Two rows that this message would
+    // have been drawn on as one are another message: the same characters
+    // with a line break between them.
+    let cells = |row: usize, places: Range<usize>| -> usize {
+        reading.rows[row].logical[places]
+            .iter()
+            .map(|unit| screen[row].units[*unit].len())
+            .sum()
+    };
+    for (row, read) in reading.rows.iter().enumerate() {
+        let (End::Wrap, Some(below)) = (read.end, reading.rows.get(row + 1)) else {
+            continue;
+        };
+        let text = cells(row, 0..read.text);
+        let spaces = below.start - (read.start + read.text);
+        let next_word = units[below.start..below.start + below.text]
+            .iter()
+            .take_while(|unit| matches!(unit, Unit::Character(..)) && !unit.is_space())
+            .count();
+        let would_have_wrapped = match spaces {
+            0 => text >= wrap_width,
+            _ => text + spaces + cells(row + 1, 0..next_word) > wrap_width,
+        };
+        if !would_have_wrapped {
+            return None;
+        }
+    }
+    Some(reading)
 }
 
 /// Reads the message from the screen alone. `None` when some row has more

@@ -28,7 +28,8 @@
 //!   cursor steps over both as one, and Backspace deletes both.
 //! - With no message, the box shows a hint of the app's own, drawn dim.
 
-use super::{as_drawn, at, Run};
+use super::{as_drawn, at, direction_of, Run};
+use farcli::layout::Direction;
 use farcli::screen::Position;
 
 /// A key of the keyboard, or a paste.
@@ -471,6 +472,32 @@ impl ClaudeCode {
             .iter()
             .map(|(start, end, _)| self.message[*start..*end].concat().trim_end().to_string())
             .collect()
+    }
+
+    /// The Paragraph direction of each row the app wrapped the message
+    /// onto: that of the line the row is part of, a line being what stands
+    /// between two line breaks.
+    pub fn directions(&self) -> Vec<Direction> {
+        let is_break = |character: &String| character == "\n";
+        self.wrapped()
+            .iter()
+            .map(|(start, _, _)| {
+                let line_start = self.message[..*start]
+                    .iter()
+                    .rposition(is_break)
+                    .map_or(0, |at| at + 1);
+                let line_end = self.message[*start..]
+                    .iter()
+                    .position(is_break)
+                    .map_or(self.message.len(), |at| start + at);
+                direction_of(&self.message[line_start..line_end].concat())
+            })
+            .collect()
+    }
+
+    /// True when the box holds no message, and shows the app's hint.
+    pub fn holds_nothing(&self) -> bool {
+        self.message.is_empty()
     }
 
     /// The rows of the message as the app draws them.

@@ -730,3 +730,348 @@ fn the_arrow_codes_of_a_terminal_that_sends_no_windows_keys_are_swapped_like_the
     assert_eq!(forwarded, "\x1b[1;5D");
     assert_eq!(app.cursor(), at(0, end + 1));
 }
+
+/// What the Terminal should show for the message the app holds: each row
+/// the app wrapped it onto, laid out in the direction of its line. With no
+/// message, the app's own hint.
+fn as_the_app_holds_it(app: &ClaudeCode, cols: usize) -> Vec<String> {
+    if app.holds_nothing() {
+        return vec![format!("{MARK}{}", app.hint)];
+    }
+    let rows = app.rows_as_typed();
+    let directions = app.directions();
+    rows.iter()
+        .zip(directions)
+        .enumerate()
+        .map(|(row, (typed, direction))| {
+            let margin = if row == 0 { MARK } else { "  " };
+            format!("{margin}{}", laid_out(typed, direction, cols - 2))
+                .trim_end_matches(' ')
+                .to_string()
+        })
+        .collect()
+}
+
+#[test]
+fn after_any_sequence_of_editing_keys_the_text_shown_is_the_text_the_app_holds() {
+    // Messages of Farsi and English words, numbers and punctuation, typed
+    // key by key. Then keys at random: the arrows alone and with Ctrl,
+    // Backspace, Delete, Home, End, letters, digits and spaces typed
+    // wherever the cursor has got to, now and then a line break, a paste,
+    // or a key that deletes a word or the rest of the line. Some come one
+    // at a time, some several before the app draws.
+    const WORDS: &[&str] = &[
+        "abc",
+        "to",
+        "config.json",
+        "سلام",
+        "می\u{200c}شود",
+        "پیام",
+        "و",
+        "12",
+        "2.5",
+        "۳۴",
+        "10%",
+        "x",
+        "(abc)",
+        "(پیام)",
+        "[پیام]",
+        "«سلام»",
+    ];
+    const TYPED: &[char] = &['ب', 'ی', 'ک', 'a', 'z', '7', ' ', '.', 'ن', 'e'];
+    let mut state: u64 = 0x1234_5678_9abc_def1;
+    let mut pick = |from: usize| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state % from as u64) as usize
+    };
+    let cols = 40;
+    let position = |app: &ClaudeCode| (app.cursor().row, app.cursor().col);
+
+    let mut app = ClaudeCode::start(cols as u16, 16);
+    let (mut arrows, mut moved_a_cell, mut changed_row, mut right_to_left_rows) = (0, 0, 0, 0);
+    for _ in 0..150 {
+        let words: Vec<&str> = (0..1 + pick(10))
+            .map(|_| WORDS[pick(WORDS.len())])
+            .collect();
+        let message = words.join(" ");
+        app.types(&message);
+        assert_eq!(app.shown(), as_the_app_holds_it(&app, cols), "{message:?}");
+
+        // The keys so far, as a test would press them.
+        let mut pressed: Vec<String> = Vec::new();
+        let mut line_breaks = 0;
+        for _ in 0..40 {
+            let key = match pick(100) {
+                0..=27 => Key::Left,
+                28..=55 => Key::Right,
+                56..=63 => Key::Backspace,
+                64..=70 => Key::Delete,
+                71..=74 => Key::CtrlLeft,
+                75..=78 => Key::CtrlRight,
+                79..=80 => Key::Home,
+                81..=82 => Key::End,
+                83 if line_breaks < 2 => {
+                    line_breaks += 1;
+                    Key::LineBreak
+                }
+                84 => Key::DeleteWord,
+                85 => Key::DeleteToEnd,
+                86 => Key::Paste("دو word".to_string()),
+                _ => Key::Character(TYPED[pick(TYPED.len())]),
+            };
+            // One time in five, one or two more keys come before the app
+            // draws.
+            if pick(5) == 0 {
+                let mut together = vec![key];
+                for _ in 0..1 + pick(2) {
+                    let key = [Key::Left, Key::Right, Key::Character('م'), Key::Backspace][pick(4)]
+                        .clone();
+                    together.push(key);
+                }
+                pressed.push(format!("{together:?} before the app draws"));
+                let said = format!("{message:?}, then {}", pressed.join(", "));
+                for key in &together {
+                    app.press(key.clone());
+                }
+                // The app draws when it has handled the first of them, and
+                // again when it has handled them all.
+                app.handles(1);
+                assert_eq!(
+                    app.shown(),
+                    as_the_app_holds_it(&app, cols),
+                    "{said}, when the app had handled the first of the last"
+                );
+                app.handles(together.len() - 1);
+                assert_eq!(app.shown(), as_the_app_holds_it(&app, cols), "{said}");
+                continue;
+            }
+            pressed.push(format!("{key:?}"));
+            let said = format!("{message:?}, then {}", pressed.join(", "));
+
+            let before = position(&app);
+            let forwarded = app.presses(key.clone());
+            let after = position(&app);
+
+            // The text shown is the text the app holds, row by row.
+            assert_eq!(app.shown(), as_the_app_holds_it(&app, cols), "{said}");
+            match key {
+                Key::Left | Key::Right => {
+                    // The cursor went one cell to the side the key points
+                    // to, or to the row above or below, or it is at the
+                    // edge of the first row or the last and stayed.
+                    arrows += 1;
+                    let one_cell = match key {
+                        Key::Left => (before.0, before.1.wrapping_sub(1)),
+                        _ => (before.0, before.1 + 1),
+                    };
+                    if after == one_cell {
+                        moved_a_cell += 1;
+                    } else if after.0 != before.0 {
+                        assert_eq!(after.0.abs_diff(before.0), 1, "{said}");
+                        changed_row += 1;
+                    } else {
+                        assert_eq!(after, before, "{said}");
+                        let last = app.rows_as_typed().len() - 1;
+                        assert!(after.0 == 0 || usize::from(after.0) == last, "{said}");
+                    }
+                }
+                // With Ctrl held the app is sent one of the two, with Ctrl
+                // held.
+                Key::CtrlLeft | Key::CtrlRight => assert!(
+                    [as_pressed(Key::CtrlLeft), as_pressed(Key::CtrlRight)].contains(&forwarded),
+                    "{said}"
+                ),
+                // Every other key reaches the app as it was pressed.
+                key => assert_eq!(forwarded, as_pressed(key), "{said}"),
+            }
+            right_to_left_rows += app
+                .directions()
+                .iter()
+                .filter(|direction| **direction == RightToLeft)
+                .count();
+        }
+        app.presses(Key::Enter);
+    }
+    // The arrows were pressed often, mostly moved the cursor one cell, and
+    // now and then took it to another row; and many rows were right to left.
+    assert!(arrows > 2000, "{arrows}");
+    assert!(moved_a_cell > 1500, "{moved_a_cell}");
+    assert!(changed_row > 30, "{changed_row}");
+    assert!(right_to_left_rows > 3000, "{right_to_left_rows}");
+}
+
+#[test]
+fn a_key_that_deletes_right_after_a_word_jump_the_app_has_not_drawn_yet_is_still_followed() {
+    let mut app = ClaudeCode::start(40, 10);
+    app.types("سلام world foo");
+
+    // A word to the right and Backspace, both before the app draws: where
+    // a word jump leaves the cursor is the app's business, so farcli has
+    // to find where the character went from.
+    app.press(Key::CtrlRight);
+    app.press(Key::Backspace);
+    app.handles(2);
+
+    assert_eq!(app.shown(), right_to_left(&["سلام worldfoo"], 40));
+    assert_eq!(app.character_under_the_cursor(), 'f');
+
+    // The same with Home and a letter typed, and the app drawing when it
+    // has handled the letter but not the two that follow it.
+    app.press(Key::Home);
+    app.press_keys("بله");
+    app.handles(2);
+
+    assert_eq!(app.shown(), right_to_left(&["بسلام worldfoo"], 40));
+
+    app.handles(2);
+
+    assert_eq!(app.shown(), right_to_left(&["بلهسلام worldfoo"], 40));
+    assert_eq!(app.cursor(), at(0, left_of(3, 40)));
+}
+
+#[test]
+fn backspace_at_the_start_of_a_line_joins_it_to_the_line_before_only_when_the_app_has_drawn_that() {
+    let mut app = ClaudeCode::start(40, 12);
+    app.types("abc");
+    app.presses(Key::LineBreak);
+    app.types("می");
+    let two_lines = [
+        format!("{MARK}abc"),
+        format!("  {}", laid_out("می", RightToLeft, 38)),
+    ];
+    assert_eq!(app.shown(), two_lines);
+    // To the start of the second line, at the right edge.
+    pressing(&mut app, Key::Right, 2);
+    assert_eq!(app.cursor(), at(1, 39));
+
+    // Backspace there deletes the line break. The app draws once more
+    // before it has handled the key: two rows still, and two lines. A row
+    // this short is not one the app would have wrapped.
+    let forwarded = app.press(Key::Backspace);
+    app.draws();
+
+    assert_eq!(forwarded, as_pressed(Key::Backspace));
+    assert_eq!(app.shown(), two_lines);
+    assert_eq!(app.cursor(), at(1, 39));
+
+    // Now it has: one line, which begins in English.
+    app.handles(1);
+
+    assert_eq!(
+        app.shown(),
+        [format!("{MARK}{}", laid_out("abcمی", LeftToRight, 38))]
+    );
+    // The cursor is before the «م», which is the right one of the two.
+    assert_eq!(app.cursor(), at(0, 2 + 4));
+}
+
+#[test]
+fn at_the_edge_of_the_first_row_an_arrow_that_points_out_of_it_moves_nothing_wherever_the_message_starts(
+) {
+    let mut app = ClaudeCode::start(40, 10);
+    // A Farsi message that starts with a number: the number reads from the
+    // left, so the cell at the right edge is its last digit, and the start
+    // of the message is one cell further left.
+    app.types("12 سلام");
+    assert_eq!(app.shown(), right_to_left(&["12 سلام"], 40));
+    pressing(&mut app, Key::Right, 7);
+    assert_eq!(app.cursor(), at(0, 39));
+    assert_eq!(app.character_under_the_cursor(), '2');
+
+    // There is nothing to the right of it. The app's own key for going
+    // back would take its cursor to the `1`, to the left: it is sent
+    // nothing.
+    let forwarded = app.presses(Key::Right);
+
+    assert_eq!(forwarded, "");
+    assert_eq!(app.cursor(), at(0, 39));
+
+    // Left goes to the `1`, which is the start of the message.
+    let forwarded = app.presses(Key::Left);
+
+    assert_eq!(forwarded, as_pressed(Key::Left));
+    assert_eq!(app.cursor(), at(0, 38));
+    assert_eq!(app.character_under_the_cursor(), '1');
+}
+
+#[test]
+fn a_key_that_deletes_is_not_taken_to_be_handled_while_the_app_has_drawn_only_the_jump_before_it() {
+    let mut app = ClaudeCode::start(40, 10);
+    app.types("سلام world");
+    app.presses(Key::Home);
+    assert_eq!(app.cursor(), at(0, 39));
+
+    // A word to the left and Backspace, and the app draws when it has
+    // handled the first of the two only.
+    app.press(Key::CtrlLeft);
+    app.press(Key::Backspace);
+    app.handles(1);
+
+    assert_eq!(app.shown(), right_to_left(&["سلام world"], 40));
+    assert_eq!(app.cursor(), at(0, 35));
+
+    // Then the other. The row ends with an English word, so the screen
+    // alone would not say what order it is in.
+    app.handles(1);
+
+    assert_eq!(app.shown(), right_to_left(&["سلا world"], 40));
+    assert_eq!(app.cursor(), at(0, 36));
+}
+
+#[test]
+fn an_arrow_pressed_right_after_a_key_that_deletes_a_word_does_not_lose_the_message() {
+    let mut app = ClaudeCode::start(40, 10);
+    app.types("سلام world foo");
+
+    // The key that deletes a word and Right, and the app draws when it
+    // has handled the first of the two only. The row ends with an English
+    // word, so the screen alone would not say what order it is in.
+    app.press(Key::DeleteWord);
+    app.press(Key::Right);
+    app.handles(1);
+
+    assert_eq!(app.shown(), right_to_left(&["سلام world"], 40));
+    assert_eq!(app.cursor(), at(0, left_of(11, 40)));
+
+    app.handles(1);
+
+    assert_eq!(app.shown(), right_to_left(&["سلام world"], 40));
+    assert_eq!(app.cursor(), at(0, left_of(10, 40)));
+}
+
+#[test]
+fn a_key_that_deletes_a_space_nobody_can_see_does_not_lose_the_message_later() {
+    let mut app = ClaudeCode::start(40, 10);
+    // A space at the end of the message is drawn only up to the cursor.
+    // With the cursor before it, the key that deletes the rest of the line
+    // changes nothing on screen: farcli cannot know the space is gone.
+    app.types("سلام world ");
+    app.presses(Key::Home);
+    app.presses(Key::End);
+    app.presses(Key::Right);
+    app.presses(Key::DeleteToEnd);
+    assert_eq!(app.shown(), right_to_left(&["سلام world"], 40));
+    let end = at(0, left_of(10, 40));
+    assert_eq!(app.cursor(), end);
+
+    // Left of the end there is nothing.
+    app.presses(Key::Left);
+    assert_eq!(app.cursor(), end);
+
+    // Right, Left and Backspace before the app draws, and it draws when it
+    // has handled the first of them only, and again when it has handled
+    // them all. The row ends with an English word: the screen alone would
+    // not say what order it is in.
+    app.press(Key::Right);
+    app.press(Key::Left);
+    app.press(Key::Backspace);
+    app.handles(1);
+
+    assert_eq!(app.shown(), right_to_left(&["سلام world"], 40));
+
+    app.handles(2);
+
+    assert_eq!(app.shown(), right_to_left(&["سلام worl"], 40));
+}
