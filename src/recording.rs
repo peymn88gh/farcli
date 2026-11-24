@@ -312,6 +312,13 @@ impl Replay {
         Some(event)
     }
 
+    /// True while the Terminal is behind the Target app, because the app is
+    /// part-way through a frame it asked not to be shown half done. Played
+    /// with no farcli in between, the Terminal is never behind.
+    pub fn holding_frame(&self) -> bool {
+        self.session.as_ref().is_some_and(Session::holding_frame)
+    }
+
     /// Plays everything that is left.
     pub fn finish(&mut self) {
         while self.step().is_some() {}

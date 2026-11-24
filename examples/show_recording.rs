@@ -11,6 +11,10 @@
 //!   --styles       under each row, print the colours and styles of its
 //!                  cells: `[first-last what]` for each stretch of columns
 //!                  drawn in anything but the Terminal's own colours
+//!   --frames       print the screen after every event that changed it, to
+//!                  watch a reply arrive
+//!   --from MS      with --frames, start printing at this many milliseconds
+//!   --to MS        with --frames, stop printing after this many
 //!   --farcli       show what farcli makes of it: play the recording through
 //!                  a session with the App profile of the recorded app
 //! ```
@@ -30,9 +34,17 @@ fn main() -> ExitCode {
     let mut numbers = false;
     let mut styles = false;
     let mut through_farcli = false;
+    let mut frames = false;
+    let mut from = 0;
+    let mut to = u64::MAX;
     let mut file = None;
-    for arg in env::args().skip(1) {
+    let mut args = env::args().skip(1);
+    while let Some(arg) = args.next() {
+        let mut number = || args.next().and_then(|value| value.parse().ok());
         match arg.as_str() {
+            "--frames" => frames = true,
+            "--from" => from = number().unwrap_or(from),
+            "--to" => to = number().unwrap_or(to),
             "--at-keys" => at_keys = true,
             "--scrollback" => scrollback = true,
             "--numbers" => numbers = true,
@@ -43,7 +55,7 @@ fn main() -> ExitCode {
     }
     let Some(file) = file else {
         eprintln!(
-            "usage: show_recording [--at-keys] [--scrollback] [--numbers] [--styles] [--farcli] FILE"
+            "usage: show_recording [--at-keys] [--frames [--from MS] [--to MS]] [--scrollback] [--numbers] [--styles] [--farcli] FILE"
         );
         return ExitCode::from(2);
     };
@@ -113,7 +125,16 @@ fn main() -> ExitCode {
         if matches!(event, Event::AppWrote(_)) {
             drawn_since_keys = true;
         }
+        let before = frames.then(|| replay.terminal.screen());
         replay.step();
+        if (from..=to).contains(milliseconds)
+            && before.is_some_and(|rows| rows != replay.terminal.screen())
+        {
+            show(
+                &format!("after event {index}, at {milliseconds} ms"),
+                &replay,
+            );
+        }
     }
     replay.finish();
     show("at the end", &replay);
