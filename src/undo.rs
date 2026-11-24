@@ -30,7 +30,7 @@
 //! with every character where the app had it, whichever reading is taken,
 //! because Layout follows the same reordering rules.
 
-use crate::layout::{self, Bearing, Direction};
+use crate::layout::{self, Bearing, Direction, NumberMark};
 use crate::screen::{Cell, CellWidth};
 
 /// One row of a paragraph as the app drew it.
@@ -309,18 +309,7 @@ fn reading(characters: &[char], drawn: Direction) -> Option<Vec<usize>> {
     // A row drawn left to right has an English letter as its leftmost
     // letter, or no letter at all. A row drawn right to left has a Farsi
     // letter as its rightmost. This settles most rows before any search.
-    let is_letter = |c: &&char| matches!(layout::bearing(**c), Bearing::Left | Bearing::Right);
-    let possible = match drawn {
-        Direction::LeftToRight => characters
-            .iter()
-            .find(is_letter)
-            .is_none_or(|c| layout::bearing(*c) == Bearing::Left),
-        Direction::RightToLeft => characters
-            .iter()
-            .rfind(is_letter)
-            .is_some_and(|c| layout::bearing(*c) == Bearing::Right),
-    };
-    if !possible {
+    if !may_be_drawn(characters, drawn) {
         return None;
     }
     let pieces = pieces(characters);
@@ -366,6 +355,144 @@ fn reading(characters: &[char], drawn: Direction) -> Option<Vec<usize>> {
     least_odd.map(|(_, order)| order)
 }
 
+/// How many ways of reading a row's numbers and brackets `only_order`
+/// goes through. A row with more is not one it can be sure of.
+const MOST_WAYS_SETTLED: usize = 1024;
+
+/// The Logical order of a screen row's characters, as positions in the row,
+/// when the screen settles it: when one order, and no other, is drawn as
+/// this row. `None` for a row with any of the three doubts, and for a row
+/// no order gives.
+///
+/// This is for text nobody may guess at: what the user is typing in the
+/// Input box, where a wrong order puts the cursor on the wrong letter.
+pub(crate) fn only_order(characters: &[char]) -> Option<Vec<usize>> {
+    let (always_in_a_number, may_be_in_a_number) = number_marks(characters);
+    if may_be_in_a_number.len() > 8 {
+        return None;
+    }
+    let mut ways_left = MOST_WAYS_SETTLED;
+    let mut found: Option<Vec<usize>> = None;
+    // A sign between two digits, or a sign such as % beside a number, is
+    // part of the number or stands by itself: that depends on the letters
+    // before the number in Logical order, which is what is being asked. So
+    // the row is read both ways for each of them.
+    for taken in 0..1usize << may_be_in_a_number.len() {
+        let in_a_number = |at: usize| {
+            always_in_a_number.contains(&at)
+                || may_be_in_a_number
+                    .iter()
+                    .enumerate()
+                    .any(|(mark, places)| taken >> mark & 1 == 1 && places.contains(&at))
+        };
+        let pieces = pieces_where(characters, &in_a_number);
+        let doubts: Vec<usize> = (0..pieces.len())
+            .filter(|at| matches!(pieces[*at].0, Piece::Digits | Piece::Bracket))
+            .collect();
+        // Every way of reading every number and bracket: a number with the
+        // text on one side of it or the other, a bracket also as taking
+        // its direction from its neighbours.
+        let ways = |piece: usize| -> &'static [Side] {
+            match pieces[piece].0 {
+                Piece::Bracket => &[Side::Neutral, Side::Left, Side::Right],
+                _ => &[Side::Left, Side::Right],
+            }
+        };
+        let mut all_ways = 1usize;
+        for piece in &doubts {
+            all_ways = all_ways.saturating_mul(ways(*piece).len());
+        }
+        ways_left = ways_left.checked_sub(all_ways)?;
+        for drawn in [Direction::LeftToRight, Direction::RightToLeft] {
+            if !may_be_drawn(characters, drawn) {
+                continue;
+            }
+            let mut chosen = vec![0; doubts.len()];
+            loop {
+                let told: Vec<(usize, Side)> = doubts
+                    .iter()
+                    .zip(&chosen)
+                    .map(|(piece, way)| (*piece, ways(*piece)[*way]))
+                    .collect();
+                let order = logical_order(&levels(&pieces, characters, drawn, &told));
+                if checks_out(characters, &order, drawn) {
+                    match &found {
+                        Some(other) if *other != order => return None,
+                        _ => found = Some(order),
+                    }
+                }
+                // The next way of reading the doubts, counting up.
+                let mut at = 0;
+                while at < doubts.len() && chosen[at] + 1 == ways(doubts[at]).len() {
+                    chosen[at] = 0;
+                    at += 1;
+                }
+                match chosen.get_mut(at) {
+                    Some(way) => *way += 1,
+                    None => break,
+                }
+            }
+        }
+    }
+    found
+}
+
+/// The marks of a screen row that the reordering rules can count as part
+/// of a number: the places of those that always are, and the stretches of
+/// those that are for a number as English writes it and are not for one
+/// that follows a Farsi letter.
+///
+/// A point, comma, colon or slash alone between two digits is always part
+/// of the number. A plus or minus sign alone between two digits, and signs
+/// such as % right beside a number, are part of it only in the first case.
+fn number_marks(characters: &[char]) -> (Vec<usize>, Vec<std::ops::Range<usize>>) {
+    let is_digit = |at: usize| {
+        characters
+            .get(at)
+            .is_some_and(|c| layout::bearing(*c) == Bearing::Digit)
+    };
+    let mark = |at: usize| characters.get(at).and_then(|c| layout::number_mark(*c));
+    let between_digits = |at: usize| at > 0 && is_digit(at - 1) && is_digit(at + 1);
+    let (mut always, mut may_be) = (Vec::new(), Vec::new());
+    let mut at = 0;
+    while at < characters.len() {
+        match mark(at) {
+            Some(NumberMark::Joiner) if between_digits(at) => always.push(at),
+            Some(NumberMark::Sign) if between_digits(at) => may_be.push(at..at + 1),
+            Some(NumberMark::End) => {
+                let end = (at..characters.len())
+                    .find(|at| mark(*at) != Some(NumberMark::End))
+                    .unwrap_or(characters.len());
+                if (at > 0 && is_digit(at - 1)) || is_digit(end) {
+                    may_be.push(at..end);
+                }
+                at = end;
+                continue;
+            }
+            _ => {}
+        }
+        at += 1;
+    }
+    (always, may_be)
+}
+
+/// A row drawn left to right has an English letter as its leftmost letter,
+/// or no letter at all. A row drawn right to left has a Farsi letter as its
+/// rightmost.
+fn may_be_drawn(characters: &[char], drawn: Direction) -> bool {
+    let is_letter = |c: &&char| matches!(layout::bearing(**c), Bearing::Left | Bearing::Right);
+    match drawn {
+        Direction::LeftToRight => characters
+            .iter()
+            .find(is_letter)
+            .is_none_or(|c| layout::bearing(*c) == Bearing::Left),
+        Direction::RightToLeft => characters
+            .iter()
+            .rfind(is_letter)
+            .is_some_and(|c| layout::bearing(*c) == Bearing::Right),
+    }
+}
+
 /// How far the brackets of a text are from the way brackets are written:
 /// in pairs, the opening one against the first word it encloses and the
 /// closing one against the last. Zero when they are written so. A bracket
@@ -408,8 +535,14 @@ fn oddness_of_brackets(text: &[char]) -> usize {
 
 /// A screen row cut into pieces, each with how many characters it holds.
 fn pieces(characters: &[char]) -> Vec<(Piece, usize)> {
+    pieces_where(characters, &|_| false)
+}
+
+/// The same, with the marks at the places `in_a_number` names counted as
+/// digits of the number they stand in or beside.
+fn pieces_where(characters: &[char], in_a_number: &dyn Fn(usize) -> bool) -> Vec<(Piece, usize)> {
     let mut pieces: Vec<(Piece, usize)> = Vec::new();
-    for character in characters {
+    for (at, character) in characters.iter().enumerate() {
         let piece = match layout::bearing(*character) {
             Bearing::Left => Piece::Left,
             Bearing::Right => Piece::Right,
@@ -417,6 +550,7 @@ fn pieces(characters: &[char]) -> Vec<(Piece, usize)> {
             Bearing::Weak if matches!(character, '(' | ')' | '[' | ']' | '{' | '}') => {
                 Piece::Bracket
             }
+            Bearing::Weak if in_a_number(at) => Piece::Digits,
             Bearing::Weak => Piece::Gap,
         };
         match pieces.last_mut() {

@@ -99,6 +99,35 @@ pub(crate) fn bearing(character: char) -> Bearing {
     }
 }
 
+/// A character that is written inside or beside a number, and by the
+/// reordering rules can count as part of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NumberMark {
+    /// A plus or minus sign: part of a number when it stands alone between
+    /// two digits.
+    Sign,
+    /// A point, comma, colon or slash: part of a number when it stands
+    /// alone between two digits.
+    Joiner,
+    /// A sign such as % or $: part of a number it stands beside.
+    End,
+}
+
+pub(crate) fn number_mark(character: char) -> Option<NumberMark> {
+    match class_of(character) {
+        CharClass::Sign => Some(NumberMark::Sign),
+        CharClass::NumberJoiner => Some(NumberMark::Joiner),
+        CharClass::NumberEnd => Some(NumberMark::End),
+        _ => None,
+    }
+}
+
+/// True for a character that takes no cell of its own and is drawn with the
+/// character before it: a Half-space, or an accent or vowel mark.
+pub(crate) fn takes_no_cell(character: char) -> bool {
+    matches!(character, HALF_SPACE | '\u{200d}') || class_of(character) == CharClass::Mark
+}
+
 /// The Logical positions of a line's characters in the order they sit on
 /// screen from the left, by the Unicode reordering rules alone, for a line
 /// whose direction is `direction`. This is the order a Target app that

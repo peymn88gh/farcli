@@ -13,10 +13,13 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::Range;
 
 use crate::app_profile::{AppProfile, Screen};
+use crate::input_box::{InputBox, Place};
 use crate::layout::{self, Direction, Line};
 use crate::painter::Frame;
+use crate::regions::claude_code;
 use crate::regions::{Finder, ItemStart, Kind, ParagraphStart, Region};
-use crate::screen::{Cell, Color, EraseScreen, Row, ScreenChange};
+use crate::screen::{Cell, Color, EraseScreen, Position, Row, ScreenChange};
+use crate::terminal_input::Input;
 use crate::undo::{self, DrawnRow, Start};
 
 /// Turns each frame a Target app drew into the frame farcli shows. It
@@ -40,6 +43,8 @@ pub(crate) struct Correction {
     /// reply was found to be while the rows before it were in sight, so
     /// that it reads the same when they are scrolled out of sight.
     seen: HashMap<u64, Seen>,
+    /// The message the user is typing in the app's Input box.
+    input_box: InputBox,
 }
 
 /// What a row of a reply was found to be.
@@ -70,6 +75,16 @@ impl Correction {
             draws_in_colour: false,
             direction_above: None,
             seen: HashMap::new(),
+            input_box: InputBox::new(),
+        }
+    }
+
+    /// The Terminal sent `input`, which is on its way to the Target app:
+    /// what the user typed is one of the two witnesses of what the Input
+    /// box holds.
+    pub fn user_typed(&mut self, input: &Input) {
+        if self.profile.screen() == Screen::ClaudeCode {
+            self.input_box.user_typed(input);
         }
     }
 
@@ -116,7 +131,9 @@ impl Correction {
         }
         rows.append(&mut frame.rows);
 
-        self.paragraphs(&mut rows, scrolled_off.len());
+        let regions = self.paragraphs(&mut rows, scrolled_off.len());
+        let cursor = frame.cursor_visible.then_some(&mut frame.cursor);
+        self.input_box(&mut rows, &regions, scrolled_off.len(), cursor);
 
         frame.rows = rows.split_off(scrolled_off.len());
         for (at, corrected) in scrolled_off.into_iter().zip(rows) {
@@ -124,9 +141,53 @@ impl Correction {
         }
     }
 
+    /// Lays out the message being typed in the Input box as a text field,
+    /// and puts the cursor where the next character will appear. `rows`
+    /// are the rows scrolling off the top, `leaving` of them, and then the
+    /// rows on screen, where `cursor` is when the app shows it.
+    fn input_box(
+        &mut self,
+        rows: &mut [Row],
+        regions: &[Region],
+        leaving: usize,
+        cursor: Option<&mut Position>,
+    ) {
+        // Only Claude Code's Input box is known so far.
+        if self.profile.screen() != Screen::ClaudeCode {
+            return;
+        }
+        // The box the user types in is the last thing the app draws that
+        // is wholly on screen.
+        let Some(message) = regions
+            .iter()
+            .rev()
+            .filter(|region| region.rows.start >= leaving)
+            .find_map(|region| claude_code::typed_message(rows, region))
+        else {
+            return;
+        };
+        let cursor_in_message = cursor.as_ref().and_then(|cursor| {
+            let row = leaving + usize::from(cursor.row);
+            let col = usize::from(cursor.col);
+            (message.rows.contains(&row) && message.cols.contains(&col))
+                .then(|| (row - message.rows.start, col - message.cols.start))
+        });
+        let col = self.input_box.correct(Place {
+            rows: &mut rows[message.rows.clone()],
+            cols: message.cols.clone(),
+            wrap_width: message.wrap_width,
+            cursor: cursor_in_message,
+            is_empty: message.is_empty,
+        });
+        if let (Some(col), Some(cursor)) = (col, cursor) {
+            cursor.col = (message.cols.start + col) as u16;
+        }
+    }
+
     /// Lays out every paragraph of Agent output in `rows`, of which the
-    /// first `leaving` are scrolling off the top of the screen.
-    fn paragraphs(&mut self, rows: &mut [Row], leaving: usize) {
+    /// first `leaving` are scrolling off the top of the screen, and returns
+    /// the regions found in them.
+    fn paragraphs(&mut self, rows: &mut [Row], leaving: usize) -> Vec<Region> {
         self.draws_in_colour = self.draws_in_colour
             || rows.iter().flatten().any(|cell| {
                 !cell.is_left_alone()
@@ -176,6 +237,7 @@ impl Correction {
         if leaving > 0 {
             self.direction_above = cut_by_the_top;
         }
+        regions
     }
 
     fn remember(&mut self, row: u64, seen: Seen) {

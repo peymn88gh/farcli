@@ -298,14 +298,14 @@ fn rule(cols: usize) -> String {
 }
 
 #[test]
-fn the_sent_message_the_input_box_and_the_status_line_stay_exactly_as_drawn() {
+fn the_sent_message_and_the_status_line_stay_exactly_as_drawn() {
     let mut run = Run::start(40, 12);
     let sent = as_drawn("سلام، یک متن بنویس");
     let typed = as_drawn("فایل config.json را ببین");
 
     // The message the user sent, on a background of its own that fills
     // the row. Then the reply, the line under it, the Input box with Farsi
-    // typed into it, and the status line.
+    // in it, and the status line.
     run.app_writes(format!(
         "\x1b[48;2;55;55;55m❯ {sent}{}\x1b[49m\r\n\r\n",
         " ".repeat(40 - 2 - sent.chars().count())
@@ -320,9 +320,18 @@ fn the_sent_message_the_input_box_and_the_status_line_stay_exactly_as_drawn() {
     assert_eq!(run.row(2), the_paragraph_row());
     assert_eq!(run.drawn_row(0), format!("❯ {sent}"));
     assert_eq!(run.drawn_row(7), format!("❯\u{a0}{typed}"));
-    for row in [0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11] {
+    for row in [0, 1, 3, 4, 5, 6, 8, 9, 10, 11] {
         assert!(run.row_is_as_drawn(row), "row {row}: {}", run.row(row));
     }
+    // Besides the reply, only the message in the Input box is laid out.
+    // `tests/claude_input_box.rs` is about that.
+    assert_eq!(
+        run.row(7),
+        format!(
+            "❯\u{a0}{}",
+            laid_out("فایل config.json را ببین", Direction::RightToLeft, 38)
+        )
+    );
     assert_eq!(run.terminal.cursor(), run.without_farcli.cursor());
 }
 
