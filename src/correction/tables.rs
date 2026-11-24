@@ -19,7 +19,7 @@
 
 use std::ops::Range;
 
-use crate::layout::{self, Direction};
+use crate::layout::{self, Bearing, Direction};
 use crate::regions::Region;
 use crate::screen::{Cell, Row};
 use crate::undo;
@@ -89,27 +89,93 @@ impl Correction {
         else {
             return;
         };
+        // Each row that holds text, in Logical order. A row with no Farsi
+        // in it was drawn as it was written. `None` for a border, and for
+        // a row with no reading that fits the borders.
+        let mut written: Vec<Option<Vec<Cell>>> = region
+            .rows
+            .clone()
+            .map(|row| {
+                let cells = &rows[row][area.clone()];
+                if border_bars(cells).is_some() {
+                    return None;
+                }
+                let drawn = drawn_row(cells, false);
+                match layout::holds_right_to_left(&drawn.cells) {
+                    true => row_as_written(&drawn, &bars),
+                    false => (bars_of(&drawn.cells) == bars).then_some(drawn.cells),
+                }
+            })
+            .collect();
+        sizes_wrapped_onto_two_rows(&mut written, &bars);
+
         let mut directions: Vec<Option<Direction>> = Vec::new();
-        for row in region.rows.clone() {
+        for (row, written) in region.rows.clone().zip(written) {
             let cells = &mut rows[row][area.clone()];
-            if border_bars(cells).is_some() {
-                directions.clear();
-                continue;
-            }
-            let drawn = drawn_row(cells, false);
-            if !layout::holds_right_to_left(&drawn.cells) {
-                continue;
-            }
-            let Some(written) = row_as_written(&drawn, &bars) else {
+            let Some(written) = written else {
+                if border_bars(cells).is_some() {
+                    directions.clear();
+                }
                 continue;
             };
-            cells[..written.len()].clone_from_slice(&written);
+            if layout::holds_right_to_left(&written) {
+                cells[..written.len()].clone_from_slice(&written);
+            }
             directions.resize(bars.len() - 1, None);
             for (pair, direction) in bars.windows(2).zip(&mut directions) {
                 lay_out_cell(&mut cells[pair[0] + 1..pair[1]], direction);
             }
         }
     }
+}
+
+/// Puts right a size that the app wrapped onto two rows of a cell after
+/// its multiplication mark, as it does with «33 x 20» in a narrow column:
+/// «33 x» on one row and «20» on the next. In a row drawn right to left
+/// the app draws «33 x» as `x 33`, which is also what it draws for
+/// «x 33», and that is how the Undo step reads it. A number at the start
+/// of the same cell on the next row says the row ended in the middle of a
+/// size.
+fn sizes_wrapped_onto_two_rows(written: &mut [Option<Vec<Cell>>], bars: &[usize]) {
+    for row in 0..written.len().saturating_sub(1) {
+        for pair in bars.windows(2) {
+            let cell = pair[0] + 1..pair[1];
+            let carries_on_with_a_number = written[row + 1].as_ref().is_some_and(|next| {
+                let first = next[cell.clone()].iter().find(|cell| !is_empty(cell));
+                first.is_some_and(|first| layout::bearing(first.character) == Bearing::Digit)
+            });
+            if let (true, Some(this)) = (carries_on_with_a_number, written[row].as_mut()) {
+                number_before_its_mark(&mut this[cell]);
+            }
+        }
+    }
+}
+
+/// Turns a cell that holds a lone `x` and then one number, and nothing
+/// else, into the number and then the `x`.
+fn number_before_its_mark(cell: &mut [Cell]) {
+    let Some(first) = cell.iter().position(|cell| !is_empty(cell)) else {
+        return;
+    };
+    let last = cell
+        .iter()
+        .rposition(|cell| !is_empty(cell))
+        .unwrap_or(first);
+    let text = &cell[first..=last];
+    let Some(number) = text.iter().skip(1).position(|cell| !is_empty(cell)) else {
+        return;
+    };
+    let number = number + 1;
+    let is_a_number = text[number..]
+        .iter()
+        .all(|cell| layout::bearing(cell.character) == Bearing::Digit);
+    if !matches!(text[0].character, 'x' | 'X') || number < 2 || !is_a_number {
+        return;
+    }
+    let mut turned = text[number..].to_vec();
+    turned.extend_from_slice(&text[1..number]);
+    turned.push(text[0].clone());
+    cell[first..=last].clone_from_slice(&turned);
 }
 
 /// Lays out the text of one cell in place, in the cell's own direction.
@@ -183,6 +249,13 @@ fn border_bars(row: &[Cell]) -> Option<Vec<usize>> {
     (dashes > 0 && bars.len() >= 2).then_some(bars)
 }
 
+/// Where the upright bars of a row of a table are, as places in the row.
+fn bars_of(row: &[Cell]) -> Vec<usize> {
+    (0..row.len())
+        .filter(|at| row[*at].character == BAR)
+        .collect()
+}
+
 /// A row of a table with borders in Logical order: the reading of what
 /// the app drew in which the bars stand under the table's borders. `None`
 /// when no reading does.
@@ -193,12 +266,7 @@ fn border_bars(row: &[Cell]) -> Option<Vec<usize>> {
 /// which more cells have their text one column in from the bar on their
 /// left, as the app draws the cells under a header.
 fn row_as_written(drawn: &undo::DrawnRow, bars: &[usize]) -> Option<Vec<Cell>> {
-    let fits = |written: &Vec<Cell>| {
-        let found: Vec<usize> = (0..written.len())
-            .filter(|at| written[*at].character == BAR)
-            .collect();
-        found == bars
-    };
+    let fits = |written: &Vec<Cell>| bars_of(written) == bars;
     let starts_one_in = |written: &Vec<Cell>| {
         bars.iter()
             .filter(|bar| {

@@ -327,17 +327,61 @@ fn an_english_table_is_not_touched() {
 }
 
 #[test]
-fn a_row_under_a_table_that_does_not_sit_in_its_columns_stays_as_drawn() {
-    // While a reply arrives, Codex draws the first words of the next part
-    // right under the table for a frame.
+fn a_row_of_a_table_that_does_not_sit_in_its_columns_stays_as_drawn() {
     let mut run = Run::start(30, 10);
     let mut rows = table();
-    rows.push(reply_row("۵"));
+    // It starts one column in, as the text of a cell does, and runs across
+    // the gap between two columns.
+    rows.push(reply_row(" این متن در ستون نیست"));
 
     run.app_writes(reply_with(&rows));
 
     assert!(run.row_is_as_drawn(7), "{}", run.row(7));
     assert_ne!(run.row(6), run.drawn_row(6));
+}
+
+#[test]
+fn what_is_still_being_written_right_under_a_table_reads_as_a_paragraph() {
+    // While a reply arrives, Codex draws the part the model is writing
+    // right under the part before it, with no empty row between the two.
+    // A row at the left edge of the reply's area is not a row of the
+    // table: the text of a cell starts one column in.
+    let mut run = Run::start(30, 10);
+    let mut rows = table();
+    rows.push(reply_row("اندازه (33 x 20)"));
+
+    run.app_writes(reply_with(&rows));
+
+    assert_eq!(
+        run.row(7),
+        from_right_edge(&["(33 x 20) ", &from_the_right("ﺍﻧﺪﺍﺯﻩ")].concat())
+    );
+    // The last row of the table is still a row of the table.
+    assert_eq!(
+        run.row(6),
+        cells(
+            &format!(" {} ", from_the_right("ﻗﺎﺏ")),
+            " 40 x 30 ",
+            &format!("  {} ", from_the_right("ﭼﻮﺑﯽ")),
+        )
+    );
+}
+
+#[test]
+fn what_is_still_being_written_right_under_a_list_reads_as_a_paragraph() {
+    let mut run = Run::start(30, 10);
+
+    run.app_writes(reply_with(&[
+        item(0, "•", "برگ"),
+        item(4, "•", "رگبار"),
+        reply_row("سلام دنیا"),
+    ]));
+
+    assert_eq!(run.row(4), from_right_edge(&from_the_right("ﺳﻠﺎﻡ ﺩﻧﯿﺎ")));
+    assert_eq!(
+        run.row(3),
+        from_right_edge(&[from_the_right("ﺭﮔﺒﺎﺭ").as_str(), " •    "].concat())
+    );
 }
 
 #[test]

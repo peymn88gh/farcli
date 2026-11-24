@@ -444,7 +444,7 @@ fn the_rows_worked_out_from_what_the_model_wrote_are_the_rows_codex_drew() {
 }
 
 #[test]
-fn in_the_default_display_every_paragraph_of_the_reply_reads_as_the_model_wrote_it() {
+fn in_the_default_display_the_prose_lists_and_table_of_the_reply_read_as_the_model_wrote_them() {
     let times_seen = check_recording(DEFAULT);
 
     // The reply is longer than the screen. Its first paragraphs come into
@@ -453,7 +453,7 @@ fn in_the_default_display_every_paragraph_of_the_reply_reads_as_the_model_wrote_
 }
 
 #[test]
-fn in_the_inline_display_every_paragraph_of_the_reply_reads_as_the_model_wrote_it() {
+fn in_the_inline_display_the_prose_lists_and_table_of_the_reply_read_as_the_model_wrote_them() {
     let times_seen = check_recording(INLINE);
 
     // The reply's first rows scroll off the top, and are found by

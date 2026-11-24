@@ -50,6 +50,11 @@
 //! region. While the model is still writing a table Codex shows its source,
 //! which is left as drawn.
 //!
+//! A list ends at the first row that is neither an item nor a row an item
+//! wrapped onto, and a table at the first row that starts at the left edge
+//! and is not a rule. Plain rows there are what the model is writing next,
+//! drawn right under the part before it, and are read as prose.
+//!
 //! One kind of code looks exactly like lines of prose and is read as such:
 //! a block with no language named, or in a language Codex does not know,
 //! whose lines all start at the left edge. Codex gives it no colour.
@@ -363,7 +368,15 @@ impl Walk<'_> {
         }
         let parts = match top {
             Some(Cut::Other) => vec![(0, rows.len(), Kind::Unsure)],
-            Some(Cut::Table) => vec![(0, rows.len(), Kind::Table)],
+            Some(Cut::Table) => {
+                let end = table_end(rows, 0);
+                let mut parts = Vec::new();
+                if end > 0 {
+                    parts.push((0, end, Kind::Table));
+                }
+                self.what_follows(&mut parts, rows, &classes, end);
+                parts
+            }
             _ => self.parts(rows, &classes, top),
         };
         let cols = TEXT_COL.min(rows[0].len())..rows[0].len();
@@ -436,12 +449,41 @@ impl Walk<'_> {
             at = end;
         }
         match claim.map(|at| classes[at]) {
-            Some(RowClass::ListItem) => list_items(&mut parts, rows, free, classes),
-            Some(RowClass::Rule) => parts.push((free, rows.len(), Kind::Table)),
+            Some(RowClass::ListItem) => {
+                let end = list_items(&mut parts, rows, free, classes);
+                self.what_follows(&mut parts, rows, classes, end);
+            }
+            Some(RowClass::Rule) => {
+                let end = table_end(rows, free);
+                parts.push((free, end, Kind::Table));
+                self.what_follows(&mut parts, rows, classes, end);
+            }
             Some(_) => parts.push((free, rows.len(), Kind::Unsure)),
             None => {}
         }
         parts
+    }
+
+    /// Names the rows that stand right under a list or a table, from the
+    /// row `from` on. While a reply arrives, Codex draws the part the model
+    /// is still writing under the part before it with no empty row between
+    /// the two: plain rows from the left edge there are prose. Anything
+    /// else is left as drawn.
+    fn what_follows(
+        &self,
+        parts: &mut Vec<(usize, usize, Kind)>,
+        rows: &[Row],
+        classes: &[RowClass],
+        from: usize,
+    ) {
+        if from >= rows.len() {
+            return;
+        }
+        if classes[from..].iter().all(|class| *class == RowClass::Text) {
+            self.plain_rows(parts, rows, from..rows.len(), &classes[from..], None);
+        } else {
+            parts.push((from, rows.len(), Kind::Unsure));
+        }
     }
 
     /// Names a run of rows in the Terminal's own colours, `rows[run]`.
@@ -488,17 +530,17 @@ impl Walk<'_> {
     }
 }
 
-/// Splits the rows of a list, `rows[from..]`, into its items. Codex draws
-/// the marker of an item four columns further in for each list the item is
-/// inside, and the rows an item wraps onto two or three columns further in
-/// than its marker. A row that fits neither ends the list: it and what
-/// follows it are left as drawn.
+/// Splits the rows of a list, `rows[from..]`, into its items, and returns
+/// the row after the list's last. Codex draws the marker of an item four
+/// columns further in for each list the item is inside, and the rows an
+/// item wraps onto two or three columns further in than its marker. A row
+/// that fits neither ends the list.
 fn list_items(
     parts: &mut Vec<(usize, usize, Kind)>,
     rows: &[Row],
     from: usize,
     classes: &[RowClass],
-) {
+) -> usize {
     // The item being gathered: its first row, the column of its marker in
     // the reply's area, and what it is.
     let mut item: Option<(usize, usize, Kind)> = None;
@@ -523,11 +565,28 @@ fn list_items(
         ) && item.is_some_and(|(_, marker_col, _)| start > marker_col);
         if !carries_on {
             parts.extend(item.take().map(|(first, _, kind)| (first, at, kind)));
-            parts.push((at, rows.len(), Kind::Unsure));
-            return;
+            return at;
         }
     }
     parts.extend(item.map(|(first, _, kind)| (first, rows.len(), kind)));
+    rows.len()
+}
+
+/// The row after the last row of the table that `rows[from]` is a row of.
+/// A rule is a row of a table, and so is a row whose text starts further
+/// in than the left edge of the reply's area: Codex leaves a column empty
+/// before the text of every cell.
+fn table_end(rows: &[Row], from: usize) -> usize {
+    let is_a_table_row = |row: &Row| {
+        let text = &row[TEXT_COL.min(row.len())..];
+        match text.iter().position(|cell| !is_empty(cell)) {
+            Some(0) => is_line_drawing(text[0].character),
+            _ => true,
+        }
+    };
+    (from..rows.len())
+        .find(|at| !is_a_table_row(&rows[*at]))
+        .unwrap_or(rows.len())
 }
 
 /// How many cells the list marker at `start` takes, without the space

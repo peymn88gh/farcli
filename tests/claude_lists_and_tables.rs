@@ -333,6 +333,68 @@ fn a_table_row_whose_bars_cannot_be_put_under_the_borders_stays_as_drawn() {
     assert!(run.row_is_as_drawn(3), "{}", run.row(3));
 }
 
+#[test]
+fn a_cell_wrapped_onto_several_rows_reads_as_written_on_each_of_them() {
+    let mut run = Run::start(30, 12);
+
+    // The app wraps the text of a cell inside its column, and reorders
+    // each of the rows that makes as one piece. The second row of the
+    // first cell here begins with an English word, so the app drew that
+    // row left to right: the Farsi of its two cells is one stretch to it,
+    // drawn from the right with the bar inside, and the bar is no longer
+    // under its joint.
+    run.app_writes(reply_with(&[
+        "┌──────────────┬───────┐".to_string(),
+        table_row("│ این را با    │ لوگو  │"),
+        table_row("│ status ببین  │ کوچک  │"),
+        "└──────────────┴───────┘".to_string(),
+    ]));
+
+    assert_eq!(run.drawn_row(4), "  │ status کچوک │  نیبب  │");
+    assert_eq!(
+        run.row(3),
+        format!(
+            "  │    {} │  {} │",
+            from_the_right("ﺍﯾﻦ ﺭﺍ ﺑﺎ"),
+            from_the_right("ﻟﻮﮔﻮ")
+        )
+    );
+    // Like the row of a paragraph, it keeps the direction of the cell's
+    // first row.
+    assert_eq!(
+        run.row(4),
+        format!(
+            "  │  {} status │  {} │",
+            from_the_right("ﺑﺒﯿﻦ"),
+            from_the_right("ﮐﻮﭼﮏ")
+        )
+    );
+}
+
+#[test]
+fn a_size_wrapped_onto_two_rows_of_a_cell_keeps_its_first_number_first() {
+    let mut run = Run::start(30, 12);
+
+    // The column is too narrow for «33 x 20», and the app wrapped it after
+    // the `x`. It drew the first of the two rows from the right, like the
+    // Farsi cell beside it, so the `x` is on the left of its number: just
+    // what it draws for «x 33». The number on the row below says which of
+    // the two was written.
+    run.app_writes(reply_with(&[
+        "┌───────┬──────┐".to_string(),
+        table_row("│ لوگو  │ 33 x │"),
+        table_row("│       │ 20   │"),
+        "└───────┴──────┘".to_string(),
+    ]));
+
+    assert_eq!(run.drawn_row(3), "  │ x 33 │  وگول │");
+    assert_eq!(
+        run.row(3),
+        format!("  │  {} │ 33 x │", from_the_right("ﻟﻮﮔﻮ"))
+    );
+    assert_eq!(run.row(4), "  │       │ 20   │");
+}
+
 /// The rows of a list whose first item wraps onto a second row, as the
 /// app draws them and as they should be shown.
 fn wrapped_list() -> (Vec<String>, Vec<String>) {
@@ -380,12 +442,17 @@ fn a_wrapped_item_cut_by_the_top_of_the_classic_display_reads_the_same_on_both_s
 }
 
 /// The bytes that draw `rows` from the top of the fullscreen display, the
-/// way Claude Code draws the conversation again after the user scrolls.
+/// way Claude Code draws the conversation again after the user scrolls, in
+/// a Terminal ten rows high. On the last three rows is the Input box, which
+/// this display always shows under the conversation: it is what tells that
+/// the screen is Claude Code's when no mark of a reply is in sight.
 fn fullscreen_frame(rows: &[String]) -> String {
     let mut bytes = String::new();
     for (row, text) in rows.iter().enumerate() {
         bytes.push_str(&format!("\x1b[{};1H\x1b[2K{}", row + 1, placed(2, text)));
     }
+    let border = "─".repeat(30);
+    bytes.push_str(&format!("\x1b[8;1H{border}\x1b[9;1H❯ \x1b[10;1H{border}"));
     bytes
 }
 
@@ -393,7 +460,7 @@ fn fullscreen_frame(rows: &[String]) -> String {
 fn in_the_fullscreen_display_the_second_row_of_an_item_reads_the_same_with_its_marker_out_of_sight()
 {
     let (drawn, shown) = wrapped_list();
-    let mut run = Run::start(30, 6);
+    let mut run = Run::start(30, 10);
     run.app_writes("\x1b[?1049h");
     let empty = String::new();
 
@@ -427,7 +494,7 @@ fn in_the_fullscreen_display_the_second_row_of_an_item_never_seen_whole_stays_as
     // the row could be the end of an item under a bullet or under a
     // number, or a row of code, and those begin in different columns.
     let (drawn, shown) = wrapped_list();
-    let mut run = Run::start(30, 6);
+    let mut run = Run::start(30, 10);
     run.app_writes("\x1b[?1049h");
 
     run.app_writes(fullscreen_frame(&[drawn[1].clone(), drawn[2].clone()]));

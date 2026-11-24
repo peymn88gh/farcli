@@ -346,7 +346,7 @@ fn the_rows_worked_out_from_what_the_model_wrote_are_the_rows_claude_code_drew()
 }
 
 #[test]
-fn in_the_classic_display_every_paragraph_of_the_reply_reads_as_the_model_wrote_it() {
+fn in_the_classic_display_the_prose_lists_and_table_of_the_reply_read_as_the_model_wrote_them() {
     let times_seen = check_recording(CLASSIC);
 
     // The reply is written in one piece and is longer than the screen: its
@@ -355,7 +355,7 @@ fn in_the_classic_display_every_paragraph_of_the_reply_reads_as_the_model_wrote_
 }
 
 #[test]
-fn in_the_fullscreen_display_every_paragraph_of_the_reply_reads_as_the_model_wrote_it() {
+fn in_the_fullscreen_display_the_prose_lists_and_table_of_the_reply_read_as_the_model_wrote_them() {
     let times_seen = check_recording(FULLSCREEN);
 
     // The paragraphs come into sight when the user scrolls up, and are in
