@@ -114,6 +114,54 @@ fn a_reply_written_in_one_piece_that_is_longer_than_the_screen_is_corrected_from
     assert_eq!(scrolled_off[1], format!("  {}", wanted[1]));
 }
 
+#[test]
+fn the_lines_of_a_poem_read_correctly_while_they_scroll_off_the_top_one_by_one() {
+    // Four lines under one another, each a paragraph of its own. The app
+    // draws in colour (its reply mark is white), so plain lines are prose.
+    // The third begins with an English word and ends with a full stop, so
+    // it runs left to right; the lines around it do not follow it.
+    let lines = [
+        "باران می‌بارد، کوچه خیس است",
+        "برگ زرد روی شاخه می‌لرزد",
+        "Python را دوست دارم.",
+        "دلم برای تو تنگ است",
+    ];
+    let wanted: Vec<String> = lines
+        .iter()
+        .map(|line| laid_out(line, claude_code::direction_of(line), 38))
+        .collect();
+    assert!(wanted[2].starts_with("Python "), "{wanted:?}");
+    let mut run = Run::start(40, 4);
+
+    // The classic display: every row written pushes the rows above it up,
+    // and the top of the screen cuts between the lines.
+    run.app_writes("\x1b[38;2;255;255;255m●\x1b[39m");
+    for (written, line) in lines.iter().enumerate() {
+        run.app_writes(text_row(line));
+        let scrolled_off = run.terminal.scrollback_text();
+        let shown = [scrolled_off, run.terminal.screen_text()].concat();
+        for (row, wanted) in wanted[..=written].iter().enumerate() {
+            let margin = if row == 0 { "● " } else { "  " };
+            assert_eq!(
+                shown[row],
+                format!("{margin}{wanted}"),
+                "row {row} after line {written}"
+            );
+        }
+    }
+    assert_eq!(run.terminal.scrollback_text().len(), 1);
+    run.app_writes("\r\n\r\n");
+    assert_eq!(
+        run.terminal.scrollback_text(),
+        [
+            format!("● {}", wanted[0]),
+            format!("  {}", wanted[1]),
+            format!("  {}", wanted[2])
+        ]
+    );
+    assert_eq!(run.row(0), format!("  {}", wanted[3]));
+}
+
 /// The bytes that draw `rows` from the top of the fullscreen display, the
 /// way Claude Code draws the conversation again after the user scrolls.
 fn fullscreen_frame(rows: &[String]) -> String {
