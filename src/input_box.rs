@@ -70,6 +70,10 @@ const MOST_WAITING: usize = 1024;
 /// something else the app was showing, and never to the box.
 const MOST_WAITING_TRIED_WITHOUT_THE_OLDEST: usize = 64;
 
+/// A message longer than this is not searched for a stretch that a key may
+/// have deleted.
+const LONGEST_TRIED_FOR_A_DELETION: usize = 2000;
+
 /// One thing the user did to the message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Edit {
@@ -422,6 +426,9 @@ impl InputBox {
         if let Some((message, reading, done, _)) = best {
             return Some((message, reading, done));
         }
+        if let Some((message, reading)) = self.after_a_deletion(known, &borne_out) {
+            return Some((message, reading, self.waiting.len()));
+        }
 
         // Keys that went to something else the app was showing never
         // reached the box: the message without the oldest of them.
@@ -437,6 +444,50 @@ impl InputBox {
             }
             if let Some((reading, _)) = borne_out(&message) {
                 return Some((message, reading, self.waiting.len()));
+            }
+        }
+        None
+    }
+
+    /// The message believed, if the last key farcli does not follow
+    /// deleted what stood on one side of the cursor: the word before it,
+    /// the line up to it, the rest of the line. Which key deletes what is
+    /// the app's business. What it drew is the message with one stretch
+    /// next to the cursor gone, or it is not.
+    fn after_a_deletion(
+        &self,
+        known: &Message,
+        borne_out: &dyn Fn(&Message) -> Option<(Reading, bool)>,
+    ) -> Option<(Message, Reading)> {
+        let key = self.waiting.iter().rposition(|edit| *edit == Edit::Other)?;
+        let mut before = known.clone();
+        for edit in &self.waiting[..key] {
+            if !before.apply(*edit) {
+                return None;
+            }
+        }
+        if before.units.len() > LONGEST_TRIED_FOR_A_DELETION {
+            return None;
+        }
+        // The shortest stretch first: before the cursor, then after it.
+        let cursor = before.cursor;
+        let before_the_cursor = (0..cursor).rev().map(|from| from..cursor);
+        let after_the_cursor = (cursor + 1..=before.units.len()).map(|to| cursor..to);
+        'stretches: for gone in before_the_cursor.chain(after_the_cursor) {
+            let mut message = before.clone();
+            message.cursor = gone.start;
+            message.units.drain(gone);
+            for edit in &self.waiting[key + 1..] {
+                if !message.apply(*edit) {
+                    continue 'stretches;
+                }
+            }
+            // The app's cursor has to be where the deletion left it.
+            match borne_out(&message) {
+                Some((reading, _)) if reading.cursor == Some(message.cursor) => {
+                    return Some((message, reading))
+                }
+                _ => {}
             }
         }
         None

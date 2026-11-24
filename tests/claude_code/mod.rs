@@ -3,6 +3,8 @@
 
 #![allow(dead_code)]
 
+pub mod input_box;
+
 use farcli::app_profile::AppProfile;
 use farcli::fake_terminal::FakeTerminal;
 use farcli::layout::{self, Direction};
