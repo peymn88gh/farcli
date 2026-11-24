@@ -210,6 +210,9 @@ pub(crate) fn typed_message(rows: &[Row], region: &Region) -> Option<TypedMessag
         return None;
     }
     let first = &rows[inside.start];
+    if first.len() < TEXT_COL + 4 {
+        return None;
+    }
     let marked = PROMPT_MARKS.contains(&first[0].character)
         && first
             .get(1)
@@ -217,7 +220,7 @@ pub(crate) fn typed_message(rows: &[Row], region: &Region) -> Option<TypedMessag
     let nothing_under_the_mark = rows[inside.start + 1..inside.end]
         .iter()
         .all(|row| row[..TEXT_COL.min(row.len())].iter().all(is_empty));
-    if !marked || !nothing_under_the_mark || first.len() < TEXT_COL + 4 {
+    if !marked || !nothing_under_the_mark {
         return None;
     }
     let cols = TEXT_COL..first.len();
