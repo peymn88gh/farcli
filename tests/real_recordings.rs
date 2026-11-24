@@ -3,7 +3,8 @@
 //! typing work needs, and hold nothing personal.
 //!
 //! Each `NAME.recording` was made by running the app under the real
-//! `farcli` on a hidden terminal with `NAME.steps` played into it. A reply
+//! `farcli` on a hidden terminal with `NAME.steps` played into it, in the
+//! environment PowerShell has in Windows Terminal: with colours. A reply
 //! recording has the text the model wrote beside it in `NAME.reply.md`.
 
 use std::collections::BTreeSet;
@@ -12,6 +13,7 @@ use std::path::PathBuf;
 
 use farcli::hidden_terminal::HiddenTerminal;
 use farcli::recording::{Event, Recording, Replay};
+use farcli::screen::{Cell, Color};
 
 const REPLIES: [&str; 4] = [
     "claude-classic-reply",
@@ -32,6 +34,19 @@ const INPUT_PROBES: &str = "claude-classic-input-probes";
 /// Claude Code started with `--ax-screen-reader`.
 const SCREEN_READER: &str = "claude-screen-reader-typing";
 
+/// Sessions started again with `--resume`, in which Claude Code draws an
+/// earlier reply again and nothing is sent. The first is the reply of an
+/// earlier recording, kept for its wrapped row that begins with an English
+/// word. The other two draw a Markdown text written by hand, which is in
+/// `NAME.reply.md`: lines separated by single line breaks, code blocks with
+/// and without a language, a heading, a quotation, a link and list items
+/// that wrap.
+const DRAWN_AGAIN: [&str; 3] = [
+    "claude-classic-resumed-reply",
+    "claude-classic-markdown-shapes",
+    "claude-fullscreen-markdown-shapes",
+];
+
 /// What `scrub_recording` put where the user's name was.
 const SCRUBBED_USER: &str = "farsi.speaker";
 
@@ -46,7 +61,23 @@ fn all_names() -> Vec<&'static str> {
     names.extend(TYPING);
     names.push(INPUT_PROBES);
     names.push(SCREEN_READER);
+    names.extend(DRAWN_AGAIN);
     names
+}
+
+#[test]
+fn every_recording_in_the_folder_is_one_of_those_named_here() {
+    let mut in_the_folder: Vec<String> = fs::read_dir(folder())
+        .unwrap()
+        .filter_map(|entry| {
+            let name = entry.unwrap().file_name().into_string().unwrap();
+            name.strip_suffix(".recording").map(str::to_string)
+        })
+        .collect();
+    in_the_folder.sort();
+    let mut named = all_names();
+    named.sort_unstable();
+    assert_eq!(in_the_folder, named);
 }
 
 fn load(name: &str) -> Recording {
@@ -63,7 +94,9 @@ fn farsi_letters(text: &str) -> usize {
         .count()
 }
 
-/// Every row the Terminal showed at any moment of the recording.
+/// Every row the Terminal showed at any moment of the recording, and the
+/// rows found by scrolling back at its end: the classic display writes a
+/// long reply in one piece, and its first rows are on screen at no moment.
 fn rows_ever_shown(recording: &Recording) -> BTreeSet<String> {
     let mut rows = BTreeSet::new();
     let mut replay = Replay::without_farcli(recording);
@@ -73,6 +106,7 @@ fn rows_ever_shown(recording: &Recording) -> BTreeSet<String> {
             break;
         }
     }
+    rows.extend(replay.terminal.scrollback_text());
     rows
 }
 
@@ -84,31 +118,43 @@ struct Key {
     down: bool,
 }
 
-/// The keys of a recording made on Windows, where each reaches farcli as
-/// `ESC [ key ; scan ; character ; down ; modifiers ; repeat _`.
-fn keys(recording: &Recording) -> Vec<Key> {
-    let mut typed = Vec::new();
+/// Everything the Terminal sent farcli in a recording, as one text: the
+/// keys, what was pasted, and the Terminal's answers to the app's questions.
+fn sent_by_the_terminal(recording: &Recording) -> String {
+    let mut sent = Vec::new();
     for (_, event) in &recording.events {
         if let Event::UserTyped(bytes) = event {
-            typed.extend(bytes);
+            sent.extend(bytes);
         }
     }
-    String::from_utf8(typed)
-        .unwrap()
-        .split('_')
-        .filter_map(|code| {
-            let fields: Vec<u32> = code
-                .strip_prefix("\x1b[")?
-                .split(';')
-                .map(|field| field.parse().unwrap())
-                .collect();
-            Some(Key {
-                key: fields[0],
-                character: char::from_u32(fields[2]).filter(|character| *character != '\0'),
-                down: fields[3] == 1,
-            })
-        })
-        .collect()
+    String::from_utf8(sent).unwrap()
+}
+
+/// The keys of a recording made on Windows, where each reaches farcli as
+/// `ESC [ key ; scan ; character ; down ; modifiers ; repeat _`. Whatever
+/// else the Terminal sent (a paste, an answer) is left out.
+fn keys(recording: &Recording) -> Vec<Key> {
+    let sent = sent_by_the_terminal(recording);
+    let mut keys = Vec::new();
+    for (at, _) in sent.match_indices("\x1b[") {
+        let code = &sent[at + 2..];
+        let Some(end) = code.find(|c: char| !(c.is_ascii_digit() || c == ';')) else {
+            continue;
+        };
+        let fields: Vec<u32> = code[..end]
+            .split(';')
+            .filter_map(|field| field.parse().ok())
+            .collect();
+        if !code[end..].starts_with('_') || fields.len() != 6 {
+            continue;
+        }
+        keys.push(Key {
+            key: fields[0],
+            character: char::from_u32(fields[2]).filter(|character| *character != '\0'),
+            down: fields[3] == 1,
+        });
+    }
+    keys
 }
 
 #[test]
@@ -141,6 +187,22 @@ fn every_recording_was_made_on_the_hidden_terminal_farcli_ships() {
             "{name}: {:?}",
             recording.note("hidden-terminal")
         );
+    }
+}
+
+#[test]
+fn every_recording_was_made_with_the_colours_a_users_session_has() {
+    // The first recordings were made from a shell where `NO_COLOR` was set,
+    // and held no colour at all. Both apps tell parts of their screen apart
+    // by colour, and so does farcli. Only the screen reader display, which
+    // is meant to be read aloud, draws without colour.
+    for name in all_names() {
+        let recording = load(name);
+        let sets_a_colour = recording.events.iter().any(|(_, event)| match event {
+            Event::AppWrote(bytes) => bytes.windows(7).any(|code| code == b"\x1b[38;2;"),
+            _ => false,
+        });
+        assert_eq!(sets_a_colour, name != SCREEN_READER, "{name}");
     }
 }
 
@@ -195,13 +257,22 @@ fn every_key_the_user_pressed_reaches_the_app_unchanged() {
 
         replay.finish();
 
-        // Besides the keys, the app's side receives farcli's answers. First,
-        // once, what kind of terminal farcli is, which the hidden terminal
-        // asks as it starts. Then where the cursor is, each time it is
-        // asked: `ESC [ row ; column R`.
+        // Besides what the Terminal sent, the app's side receives farcli's
+        // answers. First, once, what kind of terminal farcli is, which the
+        // hidden terminal asks as it starts. (When the app asks the same
+        // later, the answer is the Terminal's and is among what it sent.)
+        // Then where the cursor is, each time it is asked:
+        // `ESC [ row ; column R`.
         let mut received = String::from_utf8(replay.app_received).unwrap();
         const TERMINAL_KIND: &str = "\x1b[?61c";
-        assert_eq!(received.matches(TERMINAL_KIND).count(), 1, "{name}");
+        let from_the_terminal = String::from_utf8_lossy(&typed)
+            .matches(TERMINAL_KIND)
+            .count();
+        assert_eq!(
+            received.matches(TERMINAL_KIND).count(),
+            1 + from_the_terminal,
+            "{name}"
+        );
         received = received.replacen(TERMINAL_KIND, "", 1);
         while let Some(end) = received.find('R') {
             let start = received[..end].rfind("\x1b[").unwrap();
@@ -212,7 +283,7 @@ fn every_key_the_user_pressed_reaches_the_app_unchanged() {
 }
 
 #[test]
-fn every_reply_recording_shows_farsi_prose_a_mixed_sentence_code_a_list_and_a_table() {
+fn every_reply_recording_shows_what_the_reading_tickets_need() {
     for name in REPLIES {
         let rows = rows_ever_shown(&load(name));
         let shown = |wanted: &dyn Fn(&str) -> bool| rows.iter().any(|row| wanted(row));
@@ -226,20 +297,68 @@ fn every_reply_recording_shows_farsi_prose_a_mixed_sentence_code_a_list_and_a_ta
             }),
             "{name}: Farsi with English and numbers"
         );
+
+        // A code block whose first line is a comment in Farsi. Claude Code
+        // draws the comment from the right, so its mark comes last.
         assert!(shown(&|row| row.contains("print(")), "{name}: code");
         assert!(
             shown(&|row| {
+                let line = row.trim();
+                (line.starts_with("# ") || line.ends_with(" #")) && farsi_letters(line) >= 5
+            }),
+            "{name}: a comment in Farsi"
+        );
+
+        // A list with items inside an item, and a numbered list.
+        let depths: BTreeSet<usize> = rows
+            .iter()
+            .filter(|row| {
                 let item = row.trim_start();
                 (item.starts_with("- ") || item.starts_with("• ")) && farsi_letters(row) > 0
-            }),
-            "{name}: list"
-        );
-        // Claude Code draws a table with upright bars between the columns,
-        // Codex with a heavy line under the header row.
-        let with_bars = shown(&|row| row.matches('│').count() >= 3 && farsi_letters(row) > 0);
+            })
+            .map(|row| row.len() - row.trim_start().len())
+            .collect();
+        assert!(depths.len() >= 2, "{name}: a nested list, {depths:?}");
+        for number in ["1. ", "2. "] {
+            assert!(
+                shown(&|row| row.trim_start().starts_with(number) && farsi_letters(row) > 0),
+                "{name}: a numbered list"
+            );
+        }
+
+        // A table. Claude Code draws it with upright bars between the
+        // columns, Codex with a heavy line under the header row. One cell
+        // holds a pair of numbers, «33 x 20», which Claude Code turns round
+        // with the rest of its row.
+        let with_bars = shown(&|row| row.matches('│').count() >= 3 && row.contains("x 20 33"));
         let with_header_line = shown(&|row| row.trim_start().starts_with('━'))
-            && shown(&|row| row.contains("توضیح") && row.contains("تعداد"));
-        assert!(with_bars || with_header_line, "{name}: table");
+            && shown(&|row| row.contains("توضیح") && row.contains("اندازه"))
+            && shown(&|row| {
+                let cells: Vec<&str> = row.split("  ").filter(|cell| !cell.is_empty()).collect();
+                cells.len() == 3 && cells[2].trim() == "33 x 20" && farsi_letters(row) > 0
+            });
+        assert!(
+            with_bars || with_header_line,
+            "{name}: a table with a number pair"
+        );
+
+        // Three short lines of Farsi separated by single line breaks: the
+        // last three lines the model wrote, each on a row of its own. (The
+        // characters are compared in any order, because Claude Code draws
+        // a row in its own Screen order.)
+        let reply = fs::read_to_string(folder().join(format!("{name}.reply.md"))).unwrap();
+        let lines: Vec<&str> = reply
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect();
+        for line in &lines[lines.len() - 3..] {
+            assert!(farsi_letters(line) >= 10, "{name}: {line}");
+            assert!(
+                shown(&|row| without_spaces(row) == without_spaces(line)),
+                "{name}: the line «{line}» on a row of its own"
+            );
+        }
     }
 }
 
@@ -273,38 +392,43 @@ fn every_typing_recording_has_a_half_space_arrows_backspace_delete_and_a_paste()
         assert!(pressed(8), "{name}: Backspace");
         assert!(pressed(46), "{name}: Delete");
         assert!(typed.contains("config.json"), "{name}: mixed sentence");
-        // The hidden terminal the session ran in kept the marks a Terminal
-        // puts around a paste to itself: farcli saw only the text, arriving
-        // several keys at a time.
-        assert!(typed.contains(PASTED), "{name}: paste");
-        let most_farsi_keys_at_once = recording
-            .events
-            .iter()
-            .filter_map(|(_, event)| match event {
-                Event::UserTyped(bytes) => Some(String::from_utf8_lossy(bytes).into_owned()),
-                _ => None,
-            })
-            // The key going down for a Farsi letter carries its number.
-            .map(|codes| {
-                codes
-                    .split('_')
-                    .filter(|code| {
-                        let fields: Vec<&str> = code.split(';').collect();
-                        fields.len() == 6
-                            && fields[3] == "1"
-                            && fields[2]
-                                .parse()
-                                .ok()
-                                .and_then(char::from_u32)
-                                .is_some_and(is_farsi)
-                    })
-                    .count()
-            })
-            .max();
+        // A paste arrives as Windows Terminal sends it to a program that
+        // asked for the marks, as both apps do: the text as it is, between
+        // the mark that starts a paste and the mark that ends it.
         assert!(
-            most_farsi_keys_at_once >= Some(3),
-            "{name}: paste in a burst"
+            sent_by_the_terminal(&recording).contains(&format!("\x1b[200~{PASTED}\x1b[201~")),
+            "{name}: paste"
         );
+    }
+}
+
+#[test]
+fn every_typing_recording_holds_its_keys_in_the_form_windows_terminal_sends() {
+    // Windows Terminal sends farcli a code for every key going down and
+    // coming up, with Windows' number for the key. The tickets for typing
+    // tell the arrow keys by that number.
+    for name in TYPING {
+        let recording = load(name);
+        let keys = keys(&recording);
+        let typed: String = keys
+            .iter()
+            .filter(|key| key.down)
+            .filter_map(|key| key.character)
+            .collect();
+        // An English message typed key by key, with the key for each
+        // letter: `h` is key 72.
+        assert!(typed.contains("hello world 42"), "{name}");
+        assert!(
+            keys.iter()
+                .any(|key| key.down && key.key == 72 && key.character == Some('h')),
+            "{name}"
+        );
+        // No arrow key in the form a Terminal sends a program that did not
+        // ask for Windows' own.
+        let sent = sent_by_the_terminal(&recording);
+        for plain in ["\x1b[A", "\x1b[B", "\x1b[C", "\x1b[D", "\x1b[H", "\x1b[F"] {
+            assert!(!sent.contains(plain), "{name}: {plain:?}");
+        }
     }
 }
 
@@ -374,28 +498,41 @@ fn claude_code_on_windows_draws_farsi_already_reordered_row_by_row() {
     let sent = ")زتنارپ لخاد( x 20 33 و 123 لثم";
     assert!(shows("claude-classic-reply", sent));
     assert!(shows("claude-fullscreen-reply", sent));
-    // The model wrote «... و اندازه‌ی تصویر را (33 x 20) تنظیم کنید.» A
-    // Half-space stays after the letter it follows.
+    // The model wrote «... و ابعاد تصویر پیش‌فرض را هم می‌توان روی
+    // (33 x 20) تنظیم کرد.» A Half-space stays after the letter it follows.
     assert!(shows(
         "claude-fullscreen-reply",
-        ".دینک میظنت )x 20 33( ار ریوصت یه\u{200c}زادنا و"
+        ".درک میظنت )x 20 33( یور ناوتی\u{200c}م مه ار ضرفش\u{200c}یپ ریوصت داعبا و"
     ));
     // A wrapped row that begins with an English word is laid out left to
-    // right on its own, inside a right-to-left paragraph. The model wrote
-    // «... مقدار timeout را روی 123 میلی‌ثانیه بگذار و اندازه‌ی آیکون را
-    // (33 x 20) نگه دار.»
+    // right on its own, inside a right-to-left paragraph. In an earlier
+    // reply, which Claude Code draws again in the session started again,
+    // the model wrote «... مقدار timeout را روی 123 میلی‌ثانیه بگذار و
+    // اندازه‌ی آیکون را (33 x 20) نگه دار.»
     // In the classic display a long reply is written in one piece and its
     // first rows are found by scrolling back.
+    let scrolled_off = |name: &str| {
+        let mut replay = Replay::without_farcli(&load(name));
+        replay.finish();
+        replay.terminal.scrollback_text()
+    };
     let begins_with_english = concat!(
         "timeout ار نوکیآ یه\u{200c}زادنا و راذگب ",
         "هیناثی\u{200c}لیم 123 یور ار (33 x 20) راد هگن."
     );
-    let mut replay = Replay::without_farcli(&load("claude-classic-reply"));
-    replay.finish();
-    let scrolled_off = replay.terminal.scrollback_text();
-    assert!(scrolled_off
+    assert!(scrolled_off("claude-classic-resumed-reply")
         .iter()
         .any(|row| row.contains(begins_with_english)));
+    // The same in the message sent, as the conversation shows it: «...
+    // config.json، یک دستور مثل git status و عددهایی مثل 123 و 33 x 20
+    // (داخل پرانتز) مخلوط شده باشد.»
+    let sent_begins_with_english = concat!(
+        "config.json، لثم روتسد کی git status 33 و 123 لثم ییاهددع و ",
+        "x 20 (زتنارپ لخاد) دشاب هدش طولخم."
+    );
+    assert!(scrolled_off("claude-classic-reply")
+        .iter()
+        .any(|row| row.contains(sent_begins_with_english)));
     // Brackets keep their shape and so face the wrong way.
     let mut replay = Replay::without_farcli(&load(INPUT_PROBES));
     assert!(replay.play_until(|replay| {
@@ -430,8 +567,48 @@ fn codex_draws_farsi_in_logical_order() {
     assert!(found);
 }
 
+/// The background colour of a row that has one colour behind all its cells
+/// and is not in the Terminal's own.
+fn background_of(row: &[Cell]) -> Option<Color> {
+    let background = row[0].style.background;
+    (background != Color::Default && row.iter().all(|cell| cell.style.background == background))
+        .then_some(background)
+}
+
+#[test]
+fn codex_draws_its_input_box_and_the_message_sent_on_backgrounds_of_their_own() {
+    // Codex asks the Terminal what its colours are, and Windows Terminal
+    // answers. With the answer Codex draws the Input box, and each message
+    // sent, on a background a little lighter than the Terminal's, across
+    // the whole row. Without it (as in the first recordings) it draws
+    // neither. The Codex tickets can tell these rows by it.
+    for name in ["codex-reply", "codex-inline-reply", "codex-typing"] {
+        let mut replay = Replay::without_farcli(&load(name));
+        let input_box_drawn = replay.play_until(|replay| {
+            replay.terminal.screen().iter().any(|row| {
+                row[0].character == '›' && row[2].character == 'A' && background_of(row).is_some()
+            })
+        });
+        assert!(input_box_drawn, "{name}");
+    }
+    // The message sent has another background than the Input box under it.
+    let mut replay = Replay::without_farcli(&load("codex-reply"));
+    let both_drawn = replay.play_until(|replay| {
+        let backgrounds: BTreeSet<String> = replay
+            .terminal
+            .screen()
+            .iter()
+            .filter(|row| row[0].character == '›')
+            .filter_map(|row| background_of(row))
+            .map(|background| format!("{background:?}"))
+            .collect();
+        backgrounds.len() == 2
+    });
+    assert!(both_drawn);
+}
+
 /// The message pasted in a reply recording, as its steps file gives it:
-/// five rows long in a Terminal of 100 columns, with nine Half-spaces.
+/// seven rows long in a Terminal of 100 columns, with twelve Half-spaces.
 fn pasted_message(name: &str) -> String {
     let steps = fs::read_to_string(folder().join(format!("{name}.steps"))).unwrap();
     let pasted = steps
@@ -459,7 +636,7 @@ fn without_spaces(text: &str) -> Vec<char> {
 fn claude_codes_input_box_keeps_a_message_with_half_spaces_whole_inside_its_borders() {
     for name in ["claude-classic-reply", "claude-fullscreen-reply"] {
         let message = pasted_message(name);
-        assert_eq!(message.matches('\u{200c}').count(), 9, "{name}");
+        assert_eq!(message.matches('\u{200c}').count(), 12, "{name}");
         let mut replay = Replay::without_farcli(&load(name));
         // The last words of the message, as Claude Code draws them.
         let pasted = replay.play_until(|replay| {
@@ -467,7 +644,7 @@ fn claude_codes_input_box_keeps_a_message_with_half_spaces_whole_inside_its_bord
                 .terminal
                 .screen_text()
                 .iter()
-                .any(|row| row.contains(".یطخه\u{200c}س Python دک کولب کی"))
+                .any(|row| row.contains(".اهع\u{200c}رصم نیب یلاخ طخ نودب و طخ کی رد عرصم"))
         });
         assert!(pasted, "{name}");
 
@@ -480,7 +657,7 @@ fn claude_codes_input_box_keeps_a_message_with_half_spaces_whole_inside_its_bord
             panic!("{name}: no Input box in {screen:?}");
         };
         let rows = &screen[top + 1..bottom];
-        assert_eq!(rows.len(), 5, "{name}: {rows:?}");
+        assert_eq!(rows.len(), 7, "{name}: {rows:?}");
         assert!(rows[0].starts_with('❯'), "{name}: {rows:?}");
         // Claude Code reorders each row, so the rows hold the message's
         // characters and words in another order: none missing, none added,
@@ -521,7 +698,7 @@ fn codexs_input_box_shows_a_message_with_half_spaces_exactly_as_it_was_pasted() 
                         .take_while(|row| !row.is_empty())
                         .map(|row| row.trim_start_matches('›').trim())
                         .collect();
-                    rows.len() == 5 && rows.join(" ") == message
+                    rows.len() == 7 && rows.join(" ") == message
                 })
         });
 

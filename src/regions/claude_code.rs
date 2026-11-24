@@ -12,6 +12,30 @@
 //! - Any other row with something in its first two columns is the app's
 //!   interface, and ends the message above it.
 //!
+//! Inside a reply, code is told from prose by how the app colours it. The
+//! app draws a code block with no border and no indentation of its own, so
+//! a block is code when:
+//!
+//! - a word of it has one of the Terminal's numbered colours, which the app
+//!   gives to the keywords, numbers, strings, comments and built-in names
+//!   of a language it knows (and otherwise only to links);
+//! - or a row of it is drawn wholly in a colour, as every row of a code
+//!   block with no language named is;
+//! - or a row of it is drawn wholly dim, as the name of a language the app
+//!   does not know is, above the code;
+//! - or a row of it starts further in than text does.
+//!
+//! Rows with none of these are prose. Where the app wrapped a text they are
+//! one paragraph, and where the writer broke the line (a poem, an address)
+//! each line is a paragraph of its own. Two things stay unsure and are left
+//! as drawn: several lines under one another from an app run with its
+//! colours switched off, where code has no colour either, and whatever
+//! follows a part of a reply that scrolled off the top and was not prose.
+//!
+//! One kind of code looks exactly like lines of prose and is read as such:
+//! a block in a language the app knows, or named `text`, in which no word
+//! is a keyword, number, string, comment or built-in name.
+//!
 //! The same display serves the classic mode, where rows scroll off the top
 //! for good, and the fullscreen mode, where the app draws the conversation
 //! again at whatever place the user has scrolled to.
@@ -37,6 +61,10 @@ const RULE: char = '─';
 
 /// The mark at the start of what a tool gave back.
 const TOOL_RESULT_MARK: char = '⎿';
+
+/// The bar the app draws before each line of a quotation. Like a list
+/// marker it stays at the left, out of the app's reordering.
+const QUOTATION_BAR: char = '▎';
 
 pub(crate) struct Finder {
     /// What lies above the first row the finder is given next.
@@ -103,9 +131,12 @@ impl Finder {
     /// The regions of `rows`, which follow one another from the top down.
     /// The first `leaving` rows are scrolling off the top of the screen:
     /// the finder keeps what it needs to carry on from the row after them.
-    pub fn find(&mut self, rows: &[Row], leaving: usize) -> Vec<Region> {
+    /// `draws_in_colour` says whether the app has drawn anything in colour
+    /// in this session: with colours switched off, less can be told.
+    pub fn find(&mut self, rows: &[Row], leaving: usize, draws_in_colour: bool) -> Vec<Region> {
         let mut walk = Walk {
             rows,
+            draws_in_colour,
             regions: Vec::new(),
             state: match self.above {
                 Above::Reply(_) => Above::Reply(None),
@@ -149,6 +180,7 @@ impl Finder {
 
 struct Walk<'a> {
     rows: &'a [Row],
+    draws_in_colour: bool,
     regions: Vec<Region>,
     state: Above,
     /// The part of a reply that the first row may carry on from above the
@@ -254,8 +286,10 @@ impl Walk<'_> {
             push(0, rows.len(), Kind::Unsure);
             return;
         }
-        // From its first list item, table border or tool result on, a
-        // block is that and nothing else.
+        // From its first list item, table border, tool result or line of a
+        // quotation on, a block is that and nothing else. Nothing lays out
+        // a quotation yet, so it is left as drawn like a part that could
+        // not be named.
         let kinds: Vec<RowKind> = rows.iter().map(|row| row_kind(row)).collect();
         let text_rows = kinds
             .iter()
@@ -273,33 +307,43 @@ impl Walk<'_> {
         if text.is_empty() {
             return;
         }
-        // Code keeps its own indentation, and the app colours it with the
-        // Terminal's numbered colours, which it uses for nothing else in a
-        // reply. A paragraph starts every row at the left edge of its area.
+        // Code keeps its own indentation, and the app colours it: a word
+        // here and there in the Terminal's numbered colours, or every word
+        // of a row. A paragraph starts every row at the left edge of its
+        // area, and its plain words are in the Terminal's own colours.
         if kinds[..text_rows].contains(&RowKind::Deep)
-            || text.iter().any(|row| holds_code_colour(row))
+            || text
+                .iter()
+                .any(|row| holds_code_colour(row) || is_wholly_coloured_or_dim(row))
         {
             push(0, text_rows, Kind::Code);
             return;
         }
         // The app wraps a paragraph only where the next word does not fit.
-        // A row that left room for the first word of the row below it is a
-        // line of its own, as in code with no colours or in a poem. Which
-        // of the two cannot be told, and code must stay as drawn, so only
-        // a block that is one wrapped text is taken as a paragraph.
+        // A row that left room for the first word of the row below it ends
+        // a line: the writer broke the line there, as in a poem or an
+        // address, and the next row starts a paragraph of its own.
         let width = cols.len();
-        let one_wrapped_text = text
-            .windows(2)
-            .all(|pair| wraps_into(&pair[0], &pair[1], width));
-        if !one_wrapped_text {
+        let mut lines = vec![0];
+        lines.extend((1..text_rows).filter(|row| !wraps_into(&text[row - 1], &text[*row], width)));
+        // Lines of code with no colours look the same as lines of prose.
+        // The app's colours are what tells them apart, so with colours
+        // switched off several lines under one another may be either, and
+        // code must stay as drawn.
+        if lines.len() > 1 && !self.draws_in_colour {
             push(0, text_rows, Kind::Unsure);
             return;
         }
-        let begins = match top {
-            Some(_) => ParagraphStart::Above,
-            None => ParagraphStart::Here,
-        };
-        push(0, text_rows, Kind::Paragraph(begins));
+        lines.push(text_rows);
+        for (line, rows) in lines.windows(2).enumerate() {
+            let begins = match (line, top) {
+                (_, None) => ParagraphStart::Here,
+                (0, Some(_)) => ParagraphStart::Above,
+                (_, Some(_)) if self.started_unknown => ParagraphStart::HereUnderLinesOutOfSight,
+                (_, Some(_)) => ParagraphStart::Here,
+            };
+            push(rows[0], rows[1], Kind::Paragraph(begins));
+        }
     }
 }
 
@@ -351,6 +395,8 @@ enum RowKind {
     ListItem,
     Table,
     ToolResult,
+    /// A line of a quotation, after the bar the app draws before it.
+    Quotation,
 }
 
 fn row_kind(row: &[Cell]) -> RowKind {
@@ -382,6 +428,8 @@ fn row_kind(row: &[Cell]) -> RowKind {
         RowKind::Table
     } else if first == TOOL_RESULT_MARK {
         RowKind::ToolResult
+    } else if first == QUOTATION_BAR {
+        RowKind::Quotation
     } else if list_marker() {
         RowKind::ListItem
     } else if start <= 1 {
@@ -392,10 +440,33 @@ fn row_kind(row: &[Cell]) -> RowKind {
 }
 
 /// True when a cell of the row has one of the Terminal's numbered colours,
-/// which the app gives to the words of a code block.
+/// which the app gives to the words of a code block: the keywords, numbers,
+/// strings, comments and built-in names of a language it knows. A link in a
+/// paragraph has such a colour too, and is told by being a link.
 fn holds_code_colour(row: &[Cell]) -> bool {
-    row.iter()
-        .any(|cell| !cell.is_left_alone() && matches!(cell.style.foreground, Color::Palette(_)))
+    row.iter().any(|cell| {
+        !cell.is_left_alone()
+            && matches!(cell.style.foreground, Color::Palette(_))
+            && cell.style.link.is_none()
+    })
+}
+
+/// True when every character of the row's text is drawn in a colour, or
+/// every one is drawn dim. The app draws a code block with no language
+/// named wholly in the colour it gives inline code, and above the code of a
+/// language it does not know it draws the language's name, dim. In a
+/// paragraph, the words between such words are in the Terminal's own
+/// colours.
+fn is_wholly_coloured_or_dim(row: &[Cell]) -> bool {
+    let mut characters = row[TEXT_COL.min(row.len())..]
+        .iter()
+        .filter(|cell| !is_empty(cell))
+        .peekable();
+    characters.peek().is_some()
+        && (characters
+            .clone()
+            .all(|cell| cell.style.foreground != Color::Default)
+            || characters.all(|cell| cell.style.dim))
 }
 
 /// True when the app, wrapping one text in an area `width` cells wide,
