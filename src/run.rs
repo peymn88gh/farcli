@@ -34,7 +34,7 @@ mod in_terminal {
     use std::sync::mpsc::{self, RecvTimeoutError};
     use std::sync::Arc;
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use crate::app_profile::AppProfile;
     use crate::app_runner::{Host, RunningApp};
@@ -54,6 +54,37 @@ mod in_terminal {
     /// Escape key from a Terminal that sends keys in no other form waits
     /// this long.
     const HELD_INPUT_LIMIT: Duration = Duration::from_millis(100);
+
+    /// How long after the last of what the Terminal sent was forwarded the
+    /// Target app is woken, on a hidden terminal that can leave an app
+    /// waiting for input it already has. An app left so went to sleep
+    /// within a fraction of a millisecond of that input arriving. This is
+    /// longer than the pieces of one paste are apart, so that a paste is
+    /// followed by one wake, and short enough that the end of a paste
+    /// arriving this late passes unnoticed.
+    const WAKE_AFTER: Duration = Duration::from_millis(20);
+
+    /// When to wake the Target app, given what was just forwarded to it
+    /// and when it was to be woken before that.
+    fn wake_time(
+        session: &Session,
+        forwarded: &Reaction,
+        before: Option<Instant>,
+    ) -> Option<Instant> {
+        if session.app_can_be_left_asleep_on_input() && !forwarded.for_app.is_empty() {
+            Some(Instant::now() + WAKE_AFTER)
+        } else {
+            before
+        }
+    }
+
+    /// What farcli does of its own accord when nothing has happened for
+    /// long enough.
+    enum Due {
+        HeldInput,
+        Wake,
+        HeldFrame,
+    }
 
     enum Event {
         AppWrote(Vec<u8>),
@@ -125,6 +156,9 @@ mod in_terminal {
 
         let mut exit_status = None;
         let mut output_ended = false;
+        // When the app is to be woken, if input was forwarded to a hidden
+        // terminal that can leave it asleep and it was not woken since.
+        let mut wake_at: Option<Instant> = None;
         let mut react = |reaction: Reaction| -> io::Result<()> {
             if !reaction.for_terminal.is_empty() {
                 terminal.write(&reaction.for_terminal)?;
@@ -138,31 +172,46 @@ mod in_terminal {
         // The run is over once the app has ended and everything it drew has
         // reached the Terminal. The two are reported in either order.
         while !(output_ended && exit_status.is_some()) {
-            let event = if session.holding_input() {
-                match happened.recv_timeout(HELD_INPUT_LIMIT) {
-                    Ok(event) => event,
-                    Err(RecvTimeoutError::Timeout) => {
-                        tape.add(|| Recorded::HeldInputReleased);
-                        react(session.release_held_input())?;
-                        continue;
-                    }
-                    Err(RecvTimeoutError::Disconnected) => break,
-                }
-            } else if session.holding_frame() {
-                match happened.recv_timeout(HELD_FRAME_LIMIT) {
-                    Ok(event) => event,
-                    Err(RecvTimeoutError::Timeout) => {
-                        tape.add(|| Recorded::HeldFrameReleased);
-                        react(session.release_held_frame())?;
-                        continue;
-                    }
-                    Err(RecvTimeoutError::Disconnected) => break,
-                }
-            } else {
-                match happened.recv() {
+            // Whichever of these comes first, if nothing happens before it.
+            // Held input and a held frame are counted from now, a wake
+            // from the last input, whatever the app draws meanwhile.
+            let now = Instant::now();
+            let due = [
+                (session.holding_input()).then_some((HELD_INPUT_LIMIT, Due::HeldInput)),
+                wake_at.map(|at| (at.saturating_duration_since(now), Due::Wake)),
+                (session.holding_frame()).then_some((HELD_FRAME_LIMIT, Due::HeldFrame)),
+            ];
+            let first_due = due.into_iter().flatten().min_by_key(|(wait, _)| *wait);
+            let event = match first_due {
+                None => match happened.recv() {
                     Ok(event) => event,
                     Err(_) => break,
-                }
+                },
+                Some((wait, due)) => match happened.recv_timeout(wait) {
+                    Ok(event) => event,
+                    Err(RecvTimeoutError::Disconnected) => break,
+                    Err(RecvTimeoutError::Timeout) => {
+                        match due {
+                            Due::HeldInput => {
+                                tape.add(|| Recorded::HeldInputReleased);
+                                let released = session.release_held_input();
+                                wake_at = wake_time(&session, &released, wake_at);
+                                react(released)?;
+                            }
+                            // A wake gives the session nothing to replay,
+                            // so a recording does not hold it.
+                            Due::Wake => {
+                                wake_at = None;
+                                react(session.wake_app())?;
+                            }
+                            Due::HeldFrame => {
+                                tape.add(|| Recorded::HeldFrameReleased);
+                                react(session.release_held_frame())?;
+                            }
+                        }
+                        continue;
+                    }
+                },
             };
             match event {
                 Event::AppWrote(bytes) => {
@@ -171,7 +220,9 @@ mod in_terminal {
                 }
                 Event::Terminal(TerminalEvent::Sent(bytes)) => {
                     tape.add(|| Recorded::UserTyped(bytes.clone()));
-                    react(session.user_typed(&bytes))?
+                    let forwarded = session.user_typed(&bytes);
+                    wake_at = wake_time(&session, &forwarded, wake_at);
+                    react(forwarded)?
                 }
                 Event::Terminal(TerminalEvent::Resized(size)) => {
                     tape.add(|| Recorded::TerminalResized(size));

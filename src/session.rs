@@ -11,7 +11,7 @@ use crate::hidden_screen::{Aside, HiddenScreen};
 use crate::hidden_terminal::HiddenTerminal;
 use crate::painter::{Frame, Painter};
 use crate::screen::Position;
-use crate::terminal_input::{Input, TerminalInput};
+use crate::terminal_input::{Input, Key, TerminalInput};
 use crate::Size;
 
 pub struct Session {
@@ -25,6 +25,9 @@ pub struct Session {
     /// True when the hidden terminal must be given a character that came
     /// with no key as a key, because it would garble the plain character.
     characters_as_keys: bool,
+    /// True when the hidden terminal can leave the app waiting for input
+    /// it has already been given.
+    app_can_be_left_asleep: bool,
 }
 
 /// What farcli tells a hidden terminal that asks what kind of terminal it
@@ -54,6 +57,7 @@ impl Session {
             hidden_terminal_is_asking: false,
             terminal_input: TerminalInput::new(),
             characters_as_keys: false,
+            app_can_be_left_asleep: false,
         }
     }
 
@@ -68,6 +72,7 @@ impl Session {
         Session {
             hidden_terminal_is_asking: hidden_terminal.asks_what_it_is_on(),
             characters_as_keys: hidden_terminal.makes_up_keys_for_plain_characters(),
+            app_can_be_left_asleep: hidden_terminal.can_leave_an_app_asleep_on_input(),
             ..Session::start(profile, size, cursor)
         }
     }
@@ -123,6 +128,32 @@ impl Session {
         let mut reaction = Reaction::default();
         for input in inputs {
             input.write_for_app(self.characters_as_keys, &mut reaction.for_app);
+        }
+        reaction
+    }
+
+    /// True when the Target app's hidden terminal can take what was
+    /// forwarded and leave the app waiting for it, until something else
+    /// arrives. The app then has to be woken: see `wake_app`.
+    pub fn app_can_be_left_asleep_on_input(&self) -> bool {
+        self.app_can_be_left_asleep
+    }
+
+    /// Wakes the Target app in case it was left waiting for input its
+    /// hidden terminal already has. It is to be called a moment after the
+    /// last of what the Terminal sent was forwarded: the app goes to sleep
+    /// within a fraction of a millisecond of that, and a wake that comes
+    /// before it sleeps is left with the input. The session has no clock,
+    /// so whoever drives it decides what a moment is.
+    ///
+    /// What wakes the app is anything more arriving. So the hidden terminal
+    /// is given a key that carries nothing, coming up: no app takes that
+    /// for a key, and an app that was not asleep loses nothing by it. A
+    /// hidden terminal that never leaves an app asleep is given nothing.
+    pub fn wake_app(&self) -> Reaction {
+        let mut reaction = Reaction::default();
+        if self.app_can_be_left_asleep {
+            Input::Key(Key::NOTHING_COMING_UP).write_for_app(false, &mut reaction.for_app);
         }
         reaction
     }

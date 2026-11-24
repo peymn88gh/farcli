@@ -75,6 +75,12 @@ pub enum Reads {
 /// paste marks as Claude Code and Codex do, and with `asks-for=mouse` for
 /// mouse reports too. Then it listens, and on Ctrl+D writes every character
 /// it was given to that file, with a note for each thing the mouse did.
+///
+/// It waits inside the call that reads keys, as a plain program does. The
+/// hidden terminal built into Windows can leave such a program waiting with
+/// keys in hand. With `ends=when-woken` the app listens, not for Ctrl+D,
+/// but until a key that carries nothing comes up after it has heard
+/// something: what farcli wakes an app with.
 pub fn be_the_app_if_asked() {
     let given = |name: &str| env::args().find_map(|arg| arg.strip_prefix(name).map(String::from));
     let Some(file) = given("keys-go-to=").map(PathBuf::from) else {
@@ -82,6 +88,7 @@ pub fn be_the_app_if_asked() {
     };
     let reads_raw = given("reads=").as_deref() == Some("raw");
     let wants_mouse = given("asks-for=").as_deref() == Some("mouse");
+    let ends_when_woken = given("ends=").as_deref() == Some("when-woken");
 
     let mut heard: Vec<u16> = Vec::new();
     // SAFETY: `INPUT_RECORD` is plain data, the buffer pointer and length
@@ -112,13 +119,21 @@ pub fn be_the_app_if_asked() {
                     KEY_EVENT => {
                         let key = record.Event.KeyEvent;
                         let character = key.uChar.UnicodeChar;
+                        let carries_nothing = key.wVirtualKeyCode == 0 && character == 0;
+                        if ends_when_woken
+                            && key.bKeyDown == 0
+                            && carries_nothing
+                            && !heard.is_empty()
+                        {
+                            break 'listening;
+                        }
                         // A character typed as its number with Alt held
                         // down comes when Alt is let go.
                         let typed = key.bKeyDown != 0 || key.wVirtualKeyCode == ALT_KEY;
                         if !typed || character == 0 {
                             continue;
                         }
-                        if character == END_OF_KEYS {
+                        if character == END_OF_KEYS && !ends_when_woken {
                             break 'listening;
                         }
                         heard.extend(std::iter::repeat_n(character, key.wRepeatCount.into()));
@@ -191,8 +206,37 @@ impl Outcome {
 
 /// Starts the stand-in app on a hidden terminal, behind `in_front` if any
 /// is given, writes `sent` to the hidden terminal all at once as a Terminal
-/// does, and returns what the app heard.
+/// does, then the key that ends the app, and returns what the app heard.
 pub fn hand_to_app(
+    test: &str,
+    in_front: Option<&Path>,
+    reads: Reads,
+    wants_mouse: bool,
+    sent: &[u8],
+) -> Outcome {
+    hand_to_app_that_ends(Ends::OnCtrlD, test, in_front, reads, wants_mouse, sent)
+}
+
+/// The same, but after `sent` the Terminal sends nothing more: the app
+/// listens until it is woken with a key that carries nothing.
+pub fn hand_to_app_until_woken(
+    test: &str,
+    in_front: Option<&Path>,
+    reads: Reads,
+    sent: &[u8],
+) -> Outcome {
+    hand_to_app_that_ends(Ends::WhenWoken, test, in_front, reads, false, sent)
+}
+
+/// What makes the stand-in app stop listening.
+#[derive(Clone, Copy, PartialEq)]
+enum Ends {
+    OnCtrlD,
+    WhenWoken,
+}
+
+fn hand_to_app_that_ends(
+    ends: Ends,
     test: &str,
     in_front: Option<&Path>,
     reads: Reads,
@@ -212,6 +256,9 @@ pub fn hand_to_app(
     }
     if wants_mouse {
         command.push("asks-for=mouse".into());
+    }
+    if ends == Ends::WhenWoken {
+        command.push("ends=when-woken".into());
     }
     command.push("--exact".into());
     command.push("--nocapture".into());
@@ -263,9 +310,11 @@ pub fn hand_to_app(
     }
 
     input.write_all(sent).unwrap();
-    input
-        .write_all(&as_keys(&String::from_utf16_lossy(&[END_OF_KEYS])))
-        .unwrap();
+    if ends == Ends::OnCtrlD {
+        input
+            .write_all(&as_keys(&String::from_utf16_lossy(&[END_OF_KEYS])))
+            .unwrap();
+    }
 
     while !waiter.is_finished() {
         assert!(Instant::now() < give_up_at, "the app never ended");
