@@ -474,6 +474,11 @@ fn is_covered(row: &[Cell]) -> bool {
     row.iter().any(has_background)
 }
 
+/// True when the row begins with the mark that starts a reply.
+pub(crate) fn starts_a_reply(row: &[Cell]) -> bool {
+    shape(row) == Shape::ReplyHead
+}
+
 fn shape(row: &[Cell]) -> Shape {
     if is_covered(row) {
         return Shape::Covered;

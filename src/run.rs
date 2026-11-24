@@ -37,7 +37,7 @@ mod in_terminal {
     use std::time::Duration;
 
     use crate::app_profile::AppProfile;
-    use crate::app_runner::{Host, RunningApp};
+    use crate::app_runner::{self, Host, RunningApp};
     use crate::recording::Event as Recorded;
     use crate::session::{Reaction, Session};
     use crate::terminal::{Terminal, TerminalEvent};
@@ -64,6 +64,13 @@ mod in_terminal {
         TerminalGone,
     }
 
+    /// The line to say at start when the Target app is newer than the
+    /// version its App profile was tested with.
+    fn newer_version_warning(profile: &AppProfile, program: &OsStr) -> Option<String> {
+        let said = app_runner::version_said(program, profile.version_args()?)?;
+        profile.newer_version_warning(&said)
+    }
+
     pub fn run(
         terminal: Terminal,
         profile: AppProfile,
@@ -79,11 +86,20 @@ mod in_terminal {
                  one could not be made ready: {why}"
             );
         }
+        // Said before the cursor is read too, and only here: when farcli
+        // steps aside for a pipe it says nothing of its own.
+        let newer_version = newer_version_warning(&profile, program);
+        if let Some(line) = &newer_version {
+            eprintln!("{line}");
+        }
         let hidden_terminal = host.hidden_terminal();
         let size = terminal.size()?;
         let cursor = terminal.cursor()?;
         let mut tape = Tape::start(&profile, program, args, size, cursor, hidden_terminal)?;
         let mut session = Session::start_on(hidden_terminal, profile, size, cursor);
+        if let Some(line) = &newer_version {
+            session.keep_in_sight(line);
+        }
         let mut app = RunningApp::start(program, args, size)?;
         let mut app_output = app.take_output();
         let mut app_input = app.take_input();

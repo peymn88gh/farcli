@@ -214,10 +214,19 @@ fn in_the_fullscreen_display_the_end_of_a_paragraph_never_seen_before_is_read_fr
     assert!(rows[1].starts_with("timeout"), "{rows:?}");
     let mut run = Run::start(48, 6);
 
+    // No mark of a reply is in sight. The Input box under the conversation,
+    // which this display always shows, is what tells that the screen is
+    // Claude Code's: rows that only look like part of a reply are left as
+    // drawn on a screen that shows nothing of the app's own.
+    let border = "─".repeat(48);
     run.app_writes("\x1b[?1049h");
     run.app_writes(fullscreen_frame(&[
         placed(2, &as_drawn(&rows[1])),
         placed(2, &as_drawn(&rows[2])),
+        String::new(),
+        border.clone(),
+        "❯ ".to_string(),
+        border,
     ]));
 
     // The last row is plainly drawn right to left, so the paragraph is

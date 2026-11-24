@@ -54,6 +54,34 @@ impl AppProfile {
         }
     }
 
+    /// The app's name as a person says it, and the newest version of it
+    /// that farcli was tested with: the one the recordings in
+    /// `tests/recordings` were made with. A newer one may draw its screen
+    /// in a way the profile does not know.
+    fn tested_with(&self) -> Option<(&'static str, &'static str)> {
+        match self.app {
+            App::ClaudeCode => Some(("Claude Code", "2.1.322")),
+            App::Codex => Some(("Codex", "0.171.0")),
+            App::Plain => None,
+        }
+    }
+
+    /// The one line farcli says at start when the app is newer than the
+    /// version the profile was tested with. `said` is what the app printed
+    /// when asked for its version. `None` when the app is not newer, or
+    /// when what it printed holds no version.
+    pub fn newer_version_warning(&self, said: &str) -> Option<String> {
+        let (app, tested) = self.tested_with()?;
+        let (version, numbers) = version_in(said)?;
+        let (_, tested_numbers) = version_in(tested)?;
+        (numbers > tested_numbers).then(|| {
+            format!(
+                "farcli: {app} {version} is newer than the tested {tested}. \
+                 F12 switches the correction off and on."
+            )
+        })
+    }
+
     /// How the app's screen is split into regions.
     pub(crate) fn screen(&self) -> Screen {
         match self.app {
@@ -77,6 +105,28 @@ impl AppProfile {
             Some("claude") => (AppProfile::claude_code(), OsString::from("claude")),
             Some("codex") => (AppProfile::codex(), OsString::from("codex")),
             _ => (AppProfile::plain(), name.to_os_string()),
+        }
+    }
+}
+
+/// The first version number in `text`, such as the `2.1.322` of
+/// `2.1.322 (Claude Code)`: as it is written, and as numbers to compare.
+/// A version has at least two numbers with a full stop between them.
+fn version_in(text: &str) -> Option<(&str, Vec<u64>)> {
+    let is_part = |character: char| character.is_ascii_digit() || character == '.';
+    let mut rest = text;
+    loop {
+        rest = &rest[rest.find(|character: char| character.is_ascii_digit())?..];
+        let length = rest
+            .find(|character| !is_part(character))
+            .unwrap_or(rest.len());
+        let (found, after) = rest.split_at(length);
+        let found = found.trim_end_matches('.');
+        let numbers: Option<Vec<u64>> =
+            found.split('.').map(|number| number.parse().ok()).collect();
+        match numbers {
+            Some(numbers) if numbers.len() > 1 => return Some((found, numbers)),
+            _ => rest = after,
         }
     }
 }

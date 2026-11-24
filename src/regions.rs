@@ -53,6 +53,17 @@ impl Finder {
         }
     }
 
+    /// True when one of `rows` begins with the mark this app starts a reply
+    /// with. No other program draws that mark there, so a screen that shows
+    /// it is this app's.
+    pub fn shows_a_reply_mark(&self, rows: &[Row]) -> bool {
+        let starts_a_reply = match self {
+            Finder::ClaudeCode(_) => claude_code::starts_a_reply,
+            Finder::Codex(_) => codex::starts_a_reply,
+        };
+        rows.iter().any(|row| starts_a_reply(row))
+    }
+
     /// The regions of `rows`, which follow one another from the top down.
     /// The first `leaving` rows are scrolling off the top of the screen.
     /// `draws_in_colour` says whether the app has drawn anything in colour

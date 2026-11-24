@@ -7,7 +7,7 @@
 //! touching real settings.
 
 mod font;
-mod jsonc;
+pub(crate) mod jsonc;
 mod vscode;
 mod wezterm;
 mod windows_account;
