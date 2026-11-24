@@ -4,16 +4,18 @@
 use std::io;
 use std::mem;
 use std::ptr;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use windows_sys::Win32::Foundation::{BOOL, HANDLE, INVALID_HANDLE_VALUE};
+use windows_sys::Win32::Foundation::{BOOL, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0};
 use windows_sys::Win32::System::Console::{
-    GetConsoleMode, GetConsoleScreenBufferInfo, GetStdHandle, ReadConsoleInputW,
-    SetConsoleCtrlHandler, SetConsoleMode, WriteConsoleW, CONSOLE_MODE, CONSOLE_SCREEN_BUFFER_INFO,
-    CTRL_BREAK_EVENT, CTRL_C_EVENT, DISABLE_NEWLINE_AUTO_RETURN, ENABLE_PROCESSED_OUTPUT,
-    ENABLE_VIRTUAL_TERMINAL_INPUT, ENABLE_VIRTUAL_TERMINAL_PROCESSING, ENABLE_WINDOW_INPUT,
-    FOCUS_EVENT, INPUT_RECORD, KEY_EVENT, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+    GetConsoleMode, GetConsoleScreenBufferInfo, GetNumberOfConsoleInputEvents, GetStdHandle,
+    ReadConsoleInputW, SetConsoleCtrlHandler, SetConsoleMode, WriteConsoleW, CONSOLE_MODE,
+    CONSOLE_SCREEN_BUFFER_INFO, CTRL_BREAK_EVENT, CTRL_C_EVENT, DISABLE_NEWLINE_AUTO_RETURN,
+    ENABLE_PROCESSED_OUTPUT, ENABLE_VIRTUAL_TERMINAL_INPUT, ENABLE_VIRTUAL_TERMINAL_PROCESSING,
+    ENABLE_WINDOW_INPUT, FOCUS_EVENT, INPUT_RECORD, KEY_EVENT, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
     WINDOW_BUFFER_SIZE_EVENT,
 };
+use windows_sys::Win32::System::Threading::{WaitForSingleObject, INFINITE};
 
 use crate::screen::Position;
 use crate::Size;
@@ -168,6 +170,14 @@ impl Terminal {
         Ok(())
     }
 
+    /// True when the Terminal has sent something that `watch` has not taken
+    /// yet.
+    pub fn input_is_waiting(&self) -> bool {
+        let mut waiting = 0u32;
+        // SAFETY: a plain call on a console handle with a valid out-pointer.
+        unsafe { GetNumberOfConsoleInputEvents(self.input, &mut waiting) != 0 && waiting > 0 }
+    }
+
     /// Waits for the user to do something and reports it to `report`, for
     /// as long as `report` returns true.
     ///
@@ -176,7 +186,16 @@ impl Terminal {
     /// pasted text with the marks around it, mouse reports, and answers to
     /// what the Target app asked. A code may be cut by the end of one report
     /// and go on in the next.
-    pub fn watch(&self, mut report: impl FnMut(TerminalEvent) -> bool) -> io::Result<()> {
+    ///
+    /// `being_read` is true from the moment input is taken from the
+    /// Terminal until it has been reported. Together with
+    /// `input_is_waiting` it tells whoever holds the start of a code
+    /// whether the rest is on its way.
+    pub fn watch(
+        &self,
+        being_read: &AtomicBool,
+        mut report: impl FnMut(TerminalEvent) -> bool,
+    ) -> io::Result<()> {
         let mut size = self.size()?;
         // The first half of a character that takes two UTF-16 units, when
         // the second has not been read yet.
@@ -186,6 +205,18 @@ impl Terminal {
         unsafe {
             let mut records: [INPUT_RECORD; 256] = mem::zeroed();
             loop {
+                // Wait for input to be there before asking for it, so that
+                // the call that reads never has to wait. The console host
+                // built into Windows can take input at the moment a reader,
+                // having found none, goes to wait inside that call, and
+                // then leave the reader waiting until something else
+                // arrives: the last key of a burst would stay unseen until
+                // the next key. The handle itself says truly whether input
+                // is waiting.
+                if WaitForSingleObject(self.input, INFINITE) != WAIT_OBJECT_0 {
+                    return Err(io::Error::last_os_error());
+                }
+                being_read.store(true, Ordering::SeqCst);
                 let mut count = 0u32;
                 if ReadConsoleInputW(self.input, records.as_mut_ptr(), 256, &mut count) == 0 {
                     return Err(io::Error::last_os_error());
@@ -235,6 +266,7 @@ impl Terminal {
                         }
                     }
                 }
+                being_read.store(false, Ordering::SeqCst);
             }
         }
     }
