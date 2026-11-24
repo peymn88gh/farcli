@@ -40,6 +40,8 @@
 //! for good, and the fullscreen mode, where the app draws the conversation
 //! again at whatever place the user has scrolled to.
 
+use std::ops::Range;
+
 use crate::layout::{self, Bearing};
 use crate::screen::{Cell, Color, Row};
 
@@ -176,6 +178,64 @@ impl Finder {
         }
         walk.regions
     }
+}
+
+/// Where the message being typed is drawn inside an Input box.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TypedMessage {
+    /// The rows it is drawn on, between the box's two borders.
+    pub rows: Range<usize>,
+    /// The columns it is drawn in: from after the prompt mark to the last.
+    pub cols: Range<usize>,
+    /// How many cells of a row the app fills before it wraps the message.
+    /// It keeps two columns free at the right edge.
+    pub wrap_width: usize,
+    /// Nothing has been typed: what the box shows, if anything, is the
+    /// app's own hint of what could be typed, drawn dim.
+    pub is_empty: bool,
+}
+
+/// The message in the Input box `region` of `rows`, when the box is one the
+/// user types a message in: closed by a border above and below, the prompt
+/// mark at the start of its first row and nothing under the mark on the
+/// rows the message wraps onto. Anything else between two borders, such as
+/// a question the app asks or the box in the mode that runs a command, is
+/// not a message.
+pub(crate) fn typed_message(rows: &[Row], region: &Region) -> Option<TypedMessage> {
+    if region.kind != Kind::InputBox || region.rows.len() < 3 {
+        return None;
+    }
+    let inside = region.rows.start + 1..region.rows.end - 1;
+    if shape(&rows[region.rows.start]) != Shape::Rule || shape(&rows[inside.end]) != Shape::Rule {
+        return None;
+    }
+    let first = &rows[inside.start];
+    if first.len() < TEXT_COL + 4 {
+        return None;
+    }
+    let marked = PROMPT_MARKS.contains(&first[0].character)
+        && first
+            .get(1)
+            .is_some_and(|cell| is_empty(cell) || cell.character == '\u{a0}');
+    let nothing_under_the_mark = rows[inside.start + 1..inside.end]
+        .iter()
+        .all(|row| row[..TEXT_COL.min(row.len())].iter().all(is_empty));
+    if !marked || !nothing_under_the_mark {
+        return None;
+    }
+    let cols = TEXT_COL..first.len();
+    let mut drawn = rows[inside.clone()]
+        .iter()
+        .flat_map(|row| &row[cols.clone()])
+        .filter(|cell| !is_empty(cell))
+        .peekable();
+    let is_empty = drawn.peek().is_none() || drawn.all(|cell| cell.style.dim);
+    Some(TypedMessage {
+        rows: inside,
+        wrap_width: cols.len() - 2,
+        cols,
+        is_empty,
+    })
 }
 
 struct Walk<'a> {

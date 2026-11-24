@@ -157,6 +157,7 @@ impl Session {
                 Pressed::Still => continue,
                 Pressed::No => {}
             }
+            self.correction.user_typed(input);
             input.write_for_app(self.characters_as_keys, &mut reaction.for_app);
         }
         // A frame the app has not finished waits for its end as before, and

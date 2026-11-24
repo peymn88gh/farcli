@@ -270,14 +270,18 @@ fn f12_pressed_while_the_app_is_part_way_through_a_frame_shows_nothing_half_done
     );
 }
 
-/// The recordings of real sessions with a reply in them: Claude Code's
+/// Recordings of real sessions. Four have a reply in them: Claude Code's
 /// classic display and Codex started with `--no-alt-screen`, where rows
-/// scroll off the top, and both apps' displays on the alternate screen.
-const REPLIES: [&str; 4] = [
+/// scroll off the top, and both apps' displays on the alternate screen. In
+/// the other two Farsi is typed into Claude Code's Input box, which farcli
+/// shows as a right-to-left text field with a cursor of its own placing.
+const SESSIONS: [&str; 6] = [
     "claude-classic-reply",
     "claude-fullscreen-reply",
     "codex-reply",
     "codex-inline-reply",
+    "claude-classic-typing",
+    "claude-fullscreen-typing",
 ];
 
 fn recording(name: &str) -> Recording {
@@ -335,7 +339,7 @@ fn play(recording: &Recording, f12_before: &[usize], mut look: impl FnMut(usize,
 
 #[test]
 fn switched_off_from_the_start_a_recorded_session_shows_what_the_app_drew_at_every_step() {
-    for name in REPLIES {
+    for name in SESSIONS {
         let recording = recording(name);
         let mut looked = 0;
 
@@ -371,7 +375,7 @@ fn switched_off_from_the_start_a_recorded_session_shows_what_the_app_drew_at_eve
 
 #[test]
 fn switched_on_again_a_recorded_session_looks_as_if_the_correction_had_never_been_off() {
-    for name in REPLIES {
+    for name in SESSIONS {
         let recording = recording(name);
         let events = recording.events.len();
         let never_off = play(&recording, &[], |_, _| {});
