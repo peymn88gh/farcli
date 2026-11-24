@@ -186,6 +186,29 @@ fn the_code_for_f12_in_pasted_text_is_text() {
 }
 
 #[test]
+fn f12_in_no_windows_form_and_spelled_out_by_an_older_console_host_goes_to_the_app_as_before() {
+    // Known gap, and a safe one. The console host built into Windows hands
+    // on a code its Terminal sent one character at a time, each as a key
+    // with no key number. farcli does not put those five back together, so
+    // here F12 is still the app's key and switches nothing.
+    let mut run = Run::start(AppProfile::claude_code(), 30, 6);
+    run.app_writes(reply(&[&["سلام دنیا"]]));
+    let corrected_screen = run.terminal.screen();
+    let spelled_out: String = "\x1b[24~"
+        .chars()
+        .map(|character| format!("\x1b[0;0;{};1;0;1_", u32::from(character)))
+        .collect();
+
+    run.user_types(&spelled_out);
+    // The session waits for more of the code until told that none came.
+    let reaction = run.session.release_held_input();
+    run.app_received.extend(reaction.for_app);
+
+    assert_eq!(String::from_utf8(run.app_received).unwrap(), spelled_out);
+    assert_eq!(run.terminal.screen(), corrected_screen);
+}
+
+#[test]
 fn switched_off_the_cursor_is_where_the_app_has_it() {
     // A program farcli knows nothing about prints a Farsi word and waits
     // after it. Corrected, the word is at the right edge and the cursor to
