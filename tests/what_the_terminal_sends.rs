@@ -253,3 +253,39 @@ fn paste_marks_that_an_older_console_host_spells_out_reach_the_hidden_terminal_a
         )]
     );
 }
+
+/// A key that carries nothing, coming up: no key number and no character.
+const NOTHING_COMING_UP: &str = "\x1b[0;0;0;0;0;1_";
+
+#[test]
+fn an_app_on_the_hidden_terminal_built_into_windows_can_be_woken_after_what_it_was_sent() {
+    let mut session = session_on(HiddenTerminal::BuiltIn);
+
+    // The built-in hidden terminal can take keys for an app at the moment
+    // the app, having found none, goes to wait for more, and then leave it
+    // waiting with those keys in hand until something else arrives.
+    let forwarded = forwarded(&mut session, &[KEY_A]);
+
+    assert_eq!(forwarded, [KEY_A]);
+    assert!(session.app_can_be_left_asleep_on_input());
+
+    // The session has no clock: whoever drives it says when the app has
+    // had the time to go to sleep.
+    let wake = session.wake_app();
+
+    // Something else arrives, which no app takes for a key.
+    assert_eq!(wake.for_app, NOTHING_COMING_UP.as_bytes());
+    assert_eq!(wake.for_terminal, b"");
+}
+
+#[test]
+fn an_app_on_the_hidden_terminal_farcli_ships_is_sent_nothing_it_was_not_sent() {
+    let mut session = session_on(HiddenTerminal::Shipped);
+
+    let forwarded = forwarded(&mut session, &[KEY_A]);
+
+    // The shipped hidden terminal wakes an app for every key it takes.
+    assert_eq!(forwarded, [KEY_A]);
+    assert!(!session.app_can_be_left_asleep_on_input());
+    assert_eq!(session.wake_app().for_app, b"");
+}

@@ -57,4 +57,16 @@ impl HiddenTerminal {
     pub(crate) fn makes_up_keys_for_plain_characters(self) -> bool {
         self == HiddenTerminal::BuiltIn
     }
+
+    /// True when the hidden terminal can take input for an app and leave
+    /// the app waiting for it. The built-in one does when the input comes
+    /// at the moment the app, having found none, goes to wait for more: it
+    /// keeps what came, and hands it over only when something else comes.
+    /// That needs input in several writes, the app reading between them,
+    /// so it is the end of a paste or of a run of mouse reports that is
+    /// left. It needs an app that waits inside the call that reads, too,
+    /// as a plain program does.
+    pub(crate) fn can_leave_an_app_asleep_on_input(self) -> bool {
+        self == HiddenTerminal::BuiltIn
+    }
 }

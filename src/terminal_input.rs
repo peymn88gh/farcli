@@ -76,6 +76,17 @@ const ALT_KEY: u16 = 18;
 const NUMBER_PAD_DIGITS: std::ops::RangeInclusive<u16> = 96..=105;
 
 impl Key {
+    /// A key that carries nothing, coming up: no key number and no
+    /// character. An app is given one only to wake it.
+    pub const NOTHING_COMING_UP: Key = Key {
+        key: 0,
+        scan_code: 0,
+        character: 0,
+        down: false,
+        modifiers: 0,
+        repeats: 1,
+    };
+
     /// Reads a key code that names all six numbers. Any other code is not
     /// taken for a key, so that it reaches the hidden terminal as it came.
     fn read(code: &[u8]) -> Option<Key> {

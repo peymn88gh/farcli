@@ -19,8 +19,8 @@ use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 use farcli::app_runner::Host;
 use farcli::hidden_terminal::HiddenTerminal;
 use stand_in::{
-    as_marked_paste, farcli, hand_to_app, Reads, PASTED, PASTE_ENDS, PASTE_STARTS, WHEEL_UP,
-    WHEEL_UP_AS_WINDOWS_TELLS_IT,
+    as_marked_paste, farcli, hand_to_app, hand_to_app_until_woken, Reads, PASTED, PASTE_ENDS,
+    PASTE_STARTS, WHEEL_UP, WHEEL_UP_AS_WINDOWS_TELLS_IT,
 };
 
 /// Not a test of farcli: the stand-in Target app.
@@ -163,4 +163,20 @@ fn a_turn_of_the_wheel_reaches_either_kind_of_app() {
             "{inside:?}"
         );
     }
+}
+
+#[test]
+fn an_app_on_the_built_in_hidden_terminal_is_woken_when_the_terminal_has_no_more_to_send() {
+    // The built-in hidden terminal can take keys for an app at the moment
+    // the app, having found none, goes to wait for more. It then leaves the
+    // app waiting with those keys in hand until something else arrives.
+    // That happened to the end of about one burst in three hundred, so this
+    // test does not wait for it: it checks that something else does arrive.
+    let _one_at_a_time = on_the_built_in_console_host(Inside::BuiltIn);
+
+    // After `x` the stand-in Terminal sends nothing, and the app listens
+    // until a key that carries nothing comes up.
+    let outcome = hand_to_app_until_woken("older-woken", Some(farcli()), Reads::Keys, b"x");
+
+    assert_eq!(outcome.heard, "x");
 }
