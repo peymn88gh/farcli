@@ -26,7 +26,7 @@
 
 mod claude_code;
 
-use claude_code::{as_drawn, direction_of, laid_out};
+use claude_code::{as_drawn, direction_of, laid_out, wrapped};
 use farcli::layout::Direction::RightToLeft;
 use farcli::recording::{Event, Recording, Replay};
 use farcli::screen::{row_text, Cell, Color, Row};
@@ -315,33 +315,79 @@ fn a_quotation_stays_as_drawn_with_its_bar() {
 }
 
 #[test]
-fn list_items_stay_as_drawn_with_the_rows_they_wrap_onto() {
-    // Lists wait for their own ticket. Claude Code draws the rows an item
-    // wraps onto under the item's text, further in than a paragraph's rows.
+fn a_list_item_that_wraps_reads_as_written_with_its_second_row_under_its_own_text() {
+    // Three items of the text are longer than a row. Claude Code draws the
+    // marker at the left, the item's text after it, and the row the text
+    // wraps onto under that text: two columns in under a bullet, three
+    // under a number, and three further for a bullet inside a numbered
+    // item.
     let reply = Reply::of_the_classic_display();
-    let items: Vec<usize> = (0..reply.drawn.len())
-        .filter(|row| {
-            let text = row_text(&reply.drawn[*row]);
-            let text = text.trim_start();
-            ["- ", "1. ", "2. "]
-                .iter()
-                .any(|mark| text.starts_with(mark))
-        })
-        .collect();
+    for (indent, marker, text) in [
+        (0, "-", "یک مورد فهرست که آن\u{200c}قدر بلند است که باید در پایانه\u{200c}ای به پهنای صد ستون به خط دوم برود تا ببینیم خط دوم آن از کجا شروع می\u{200c}شود و چطور کشیده می\u{200c}شود."),
+        (0, "1.", "یک قدم شماره\u{200c}دار که آن\u{200c}قدر بلند است که باید در پایانه\u{200c}ای به پهنای صد ستون به خط دوم برود تا ببینیم خط دوم آن از کجا شروع می\u{200c}شود."),
+        (3, "-", "زیرمورد بلندی که آن\u{200c}قدر ادامه پیدا می\u{200c}کند که در پایانه\u{200c}ای به پهنای صد ستون به خط دوم می\u{200c}رود و باید زیر متن خودش بنشیند."),
+    ] {
+        let before_the_text = indent + marker.chars().count() + 1;
+        let rows = wrapped(text, WIDTH - before_the_text);
+        assert_eq!(rows.len(), 2, "{text}");
+        let margin = " ".repeat(indent);
+        let under = " ".repeat(before_the_text);
+        let first = (0..reply.drawn.len())
+            .find(|row| {
+                row_text(&reply.drawn[*row]) == format!("  {margin}{marker} {}", as_drawn(&rows[0]))
+            })
+            .unwrap_or_else(|| panic!("no row drawn for {text}"));
+        assert_eq!(
+            row_text(&reply.drawn[first + 1]),
+            format!("  {under}{}", as_drawn(&rows[1]))
+        );
 
-    assert_eq!(items.len(), 5);
-    for item in items {
-        assert!(reply.is_as_drawn(item), "{:?}", reply.shown(item));
+        // The first row: read from the right edge, the columns the item
+        // stands in from the edge, its marker, then its text.
+        let shown = reply.shown(first);
+        assert_eq!(
+            shown,
+            laid_out(&format!("{margin}{marker} {}", rows[0]), RightToLeft, WIDTH)
+        );
+        let marker_from_the_right: String = marker.chars().rev().collect();
+        assert!(
+            shown.ends_with(&format!(" {marker_from_the_right}")),
+            "{shown}"
+        );
+        assert_eq!(shown.chars().count(), WIDTH - indent);
+        // The second row ends where the first row's text begins, short of
+        // the right edge by the marker and the columns before it.
+        let shown = reply.shown(first + 1);
+        assert_eq!(
+            shown,
+            laid_out(&format!("{under}{}", rows[1]), RightToLeft, WIDTH)
+        );
+        assert!(shown.ends_with(first_letter_joined(&rows[1])), "{shown}");
+        assert_eq!(shown.chars().count(), WIDTH - before_the_text);
     }
-    let wrapped_onto: Vec<usize> = (0..reply.drawn.len())
-        .filter(|row| {
-            let text = row_text(&reply.drawn[*row]);
-            text.starts_with("    .") || text.starts_with("     .") || text.starts_with("       .")
-        })
-        .collect();
-    assert_eq!(wrapped_onto.len(), 3);
-    for row in wrapped_onto {
-        assert!(reply.is_as_drawn(row), "{:?}", reply.shown(row));
+}
+
+/// The first letter of a row of text in the form Layout shows it in.
+fn first_letter_joined(row: &str) -> char {
+    let first_word = row.split(' ').next().unwrap();
+    laid_out(first_word, RightToLeft, first_word.chars().count())
+        .chars()
+        .next_back()
+        .unwrap()
+}
+
+#[test]
+fn short_list_items_read_as_written_with_their_markers_on_the_right() {
+    let reply = Reply::of_the_classic_display();
+    for (written, drawn) in [
+        ("- مورد کوتاه", format!("  - {}", as_drawn("مورد کوتاه"))),
+        ("2. قدم کوتاه", format!("  2. {}", as_drawn("قدم کوتاه"))),
+    ] {
+        let row = (0..reply.drawn.len())
+            .find(|row| row_text(&reply.drawn[*row]) == drawn)
+            .unwrap_or_else(|| panic!("no row drawn as {drawn:?}"));
+
+        assert_eq!(reply.shown(row), laid_out(written, RightToLeft, WIDTH));
     }
 }
 

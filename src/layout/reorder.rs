@@ -4,6 +4,8 @@
 //! one line that holds no direction marks. The rule names in the comments
 //! (W1, N1, L2 and so on) are that document's.
 
+use std::ops::Range;
+
 use super::brackets;
 use super::char_class::{class_of, CharClass};
 use super::Direction;
@@ -14,7 +16,17 @@ pub(super) type Level = u8;
 
 /// The level of each character of a line, given the line in Logical order
 /// and the Paragraph direction.
-pub(super) fn levels(characters: &[char], direction: Direction) -> Vec<Level> {
+///
+/// `left_to_right` names stretches of the line that are read left to right
+/// as one piece whatever stands in them: Layout's own rules pick them, and
+/// the Unicode rules take every character of such a stretch for a letter of
+/// a left-to-right script. With none named, the levels are those of the
+/// Unicode rules alone.
+pub(super) fn levels(
+    characters: &[char],
+    direction: Direction,
+    left_to_right: &[Range<usize>],
+) -> Vec<Level> {
     use CharClass::*;
 
     let classes: Vec<CharClass> = characters.iter().map(|c| class_of(*c)).collect();
@@ -99,6 +111,10 @@ pub(super) fn levels(characters: &[char], direction: Direction) -> Vec<Level> {
             Digit if last_letter == Left => *kind = Left,
             _ => {}
         }
+    }
+
+    for piece in left_to_right {
+        kinds[piece.clone()].fill(Left);
     }
 
     // From here on a number counts as right-to-left text.

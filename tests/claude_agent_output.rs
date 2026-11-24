@@ -45,11 +45,11 @@ fn claude_codes_own_reordering_is_undone_before_a_row_is_laid_out() {
         run.row(0),
         format!("● {}", laid_out(logical, Direction::RightToLeft, 38))
     );
-    // Spelled out: joined letters from the right edge, and each number
-    // with its digits in the order they were written.
+    // Spelled out: joined letters from the right edge, and the size as it
+    // was written, its numbers in their order.
     let on_screen = [
         from_the_right("ﺍﺳﺖ").as_str(),
-        " x 20 33 ",
+        " 33 x 20 ",
         from_the_right("ﺍﻧﺪﺍﺯﻩ").as_str(),
     ]
     .concat();

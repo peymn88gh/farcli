@@ -43,7 +43,7 @@
 use crate::layout::{self, Bearing};
 use crate::screen::{Cell, Color, Row};
 
-use super::{Kind, ParagraphStart, Region};
+use super::{ItemStart, Kind, ParagraphStart, Region};
 
 /// The first column of a message's text.
 const TEXT_COL: usize = 2;
@@ -91,7 +91,12 @@ enum Above {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Cut {
     Paragraph,
-    /// Anything that is not a paragraph: its other rows are not one either.
+    /// A list item: the rows below may be rows it wrapped onto.
+    List,
+    /// A table: the rows below are its other rows, which tell themselves
+    /// by their borders.
+    Table,
+    /// Anything else: its other rows are not to be touched either.
     Other,
 }
 
@@ -159,6 +164,7 @@ impl Finder {
             walk.step(at);
         }
         walk.close(rows.len());
+        walk.regions.sort_by_key(|region| region.rows.start);
 
         if leaving > 0 && leaving < rows.len() {
             // A region cut by the top of the screen carries on below it.
@@ -168,9 +174,9 @@ impl Finder {
                 .find(|region| region.rows.start < leaving && region.rows.end > leaving);
             self.above = match cut.map(|region| region.kind) {
                 Some(Kind::Paragraph(_)) => Above::Reply(Some(Cut::Paragraph)),
-                Some(Kind::Code | Kind::List | Kind::Table | Kind::Unsure) => {
-                    Above::Reply(Some(Cut::Other))
-                }
+                Some(Kind::ListItem(_)) => Above::Reply(Some(Cut::List)),
+                Some(Kind::Table) => Above::Reply(Some(Cut::Table)),
+                Some(Kind::Code | Kind::Unsure) => Above::Reply(Some(Cut::Other)),
                 Some(Kind::SentMessage | Kind::InputBox) | None => state_at_split,
             };
         }
@@ -258,6 +264,7 @@ impl Walk<'_> {
                 rows: self.span_start..end,
                 cols: first_col.min(cols)..cols,
                 kind,
+                cut_above: false,
             });
         }
     }
@@ -278,6 +285,7 @@ impl Walk<'_> {
                 rows: first + from..first + to,
                 cols: cols.clone(),
                 kind,
+                cut_above: top.is_some(),
             });
         };
         self.block.clear();
@@ -295,18 +303,34 @@ impl Walk<'_> {
             .iter()
             .position(|kind| !matches!(kind, RowKind::Text | RowKind::Deep))
             .unwrap_or(rows.len());
-        if text_rows < rows.len() {
-            let kind = match kinds[text_rows] {
-                RowKind::ListItem => Kind::List,
-                RowKind::Table => Kind::Table,
-                _ => Kind::Unsure,
-            };
-            push(text_rows, rows.len(), kind);
+        // Rows that start further in than a paragraph's, at the top of a
+        // block whose start is out of sight, with a list after them or a
+        // list item cut by the top of the screen above them: they are rows
+        // that item wrapped onto.
+        let in_a_list = kinds.get(text_rows) == Some(&RowKind::ListItem) || top == Some(Cut::List);
+        let carried_on = top.is_some()
+            && in_a_list
+            && text_rows > 0
+            && kinds[..text_rows].iter().all(|k| *k == RowKind::Deep);
+        if carried_on {
+            push(0, text_rows, Kind::ListItem(ItemStart::Above));
+        }
+        let claimed = match kinds.get(text_rows) {
+            Some(RowKind::ListItem) => list_items(rows, text_rows),
+            Some(RowKind::Table) => vec![(text_rows, rows.len(), Kind::Table)],
+            Some(_) => vec![(text_rows, rows.len(), Kind::Unsure)],
+            None => Vec::new(),
+        };
+        for (from, to, kind) in claimed {
+            push(from, to, kind);
         }
         let text = &rows[..text_rows];
-        if text.is_empty() {
+        if text.is_empty() || carried_on {
             return;
         }
+        // A row at the left edge under a list item or a table that was cut
+        // by the top carries on nothing: it begins a paragraph.
+        let top = top.filter(|cut| *cut == Cut::Paragraph);
         // Code keeps its own indentation, and the app colours it: a word
         // here and there in the Terminal's numbered colours, or every word
         // of a row. A paragraph starts every row at the left edge of its
@@ -405,25 +429,9 @@ fn row_kind(row: &[Cell]) -> RowKind {
         return RowKind::Text;
     };
     let first = text[start].character;
-    let then_empty = |at: usize| text.get(at).is_none_or(is_empty);
-    // List items are indented two columns for each level.
-    let list_marker = || {
-        if start % 2 != 0 {
-            return false;
-        }
-        if matches!(first, '-' | '*' | '+' | '•') {
-            return then_empty(start + 1);
-        }
-        let digits = text[start..]
-            .iter()
-            .take_while(|cell| cell.character.is_ascii_digit())
-            .count();
-        digits > 0
-            && text
-                .get(start + digits)
-                .is_some_and(|cell| matches!(cell.character, '.' | ')'))
-            && then_empty(start + digits + 1)
-    };
+    // A list begins at the left edge of the reply's area, or two columns
+    // in. A paragraph's row drawn right to left may start one column in.
+    let list_marker = || start % 2 == 0 && marker_len(text, start).is_some();
     if ('\u{2500}'..='\u{257f}').contains(&first) {
         RowKind::Table
     } else if first == TOOL_RESULT_MARK {
@@ -437,6 +445,85 @@ fn row_kind(row: &[Cell]) -> RowKind {
     } else {
         RowKind::Deep
     }
+}
+
+/// How many cells the list marker at `start` takes, without the space
+/// after it: one for a bullet, and for a number its digits and the mark
+/// after them. `None` when no marker stands there.
+fn marker_len(text: &[Cell], start: usize) -> Option<usize> {
+    let then_empty = |at: usize| text.get(at).is_none_or(is_empty);
+    let first = text.get(start)?.character;
+    if matches!(first, '-' | '*' | '+' | '•') {
+        return then_empty(start + 1).then_some(1);
+    }
+    let digits = text[start..]
+        .iter()
+        .take_while(|cell| cell.character.is_ascii_digit())
+        .count();
+    (digits > 0
+        && text
+            .get(start + digits)
+            .is_some_and(|cell| matches!(cell.character, '.' | ')'))
+        && then_empty(start + digits + 1))
+    .then_some(digits + 1)
+}
+
+/// Splits the rows of a list, `rows[from..]`, into its items: for each, its
+/// first row, the row after its last, and what it is.
+///
+/// The app draws an item's marker at the left of the item, out of its own
+/// reordering, and the item's text after it. The rows an item wraps onto
+/// start where its text does, or one column further in when the row was
+/// drawn right to left and the wrap left its space on it (see the Undo
+/// step). The marker of an item inside an item stands where the text of
+/// the item around it starts. A row that stands anywhere else is left as
+/// drawn.
+fn list_items(rows: &[Row], from: usize) -> Vec<(usize, usize, Kind)> {
+    let mut parts = Vec::new();
+    // The item being gathered and the items it is inside, outermost first:
+    // the column of each one's marker and of its text, in the reply's area.
+    let mut open: Vec<(usize, usize)> = Vec::new();
+    // The first row of the item being gathered, and how many items were
+    // open when it began.
+    let mut item: Option<(usize, usize, Kind)> = None;
+    for at in from..rows.len() {
+        let text = &rows[at][TEXT_COL.min(rows[at].len())..];
+        let start = text.iter().position(|cell| !is_empty(cell)).unwrap_or(0);
+        while open
+            .last()
+            .is_some_and(|(marker_col, _)| start < *marker_col)
+        {
+            open.pop();
+        }
+        let begins_an_item = marker_len(text, start).filter(|_| match open.last() {
+            None => true,
+            Some((marker_col, text_col)) => start == *marker_col || start == *text_col,
+        });
+        if let Some(len) = begins_an_item {
+            if open
+                .last()
+                .is_some_and(|(marker_col, _)| start == *marker_col)
+            {
+                open.pop();
+            }
+            parts.extend(item.take().map(|(first, _, kind)| (first, at, kind)));
+            open.push((start, start + len + 1));
+            let text_col = TEXT_COL + start + len + 1;
+            let kind = Kind::ListItem(ItemStart::Here { text_col });
+            item = Some((at, open.len(), kind));
+            continue;
+        }
+        let carries_on = item.is_some_and(|(_, depth, _)| depth == open.len())
+            && open
+                .last()
+                .is_some_and(|(_, text_col)| start == *text_col || start == *text_col + 1);
+        if !carries_on {
+            parts.extend(item.take().map(|(first, _, kind)| (first, at, kind)));
+            parts.push((at, at + 1, Kind::Unsure));
+        }
+    }
+    parts.extend(item.map(|(first, _, kind)| (first, rows.len(), kind)));
+    parts
 }
 
 /// True when a cell of the row has one of the Terminal's numbered colours,

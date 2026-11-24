@@ -8,13 +8,16 @@ mod brackets;
 mod char_class;
 mod direction;
 mod joining;
+mod numbers;
 mod reorder;
+mod words;
 
 use crate::screen::{Cell, CellWidth, Row};
 
 use char_class::{class_of, CharClass};
 use joining::Letter;
 
+pub(crate) use direction::direction_of_an_item_with_no_letter;
 pub use direction::paragraph_direction;
 
 /// The character that ends a letter's join without leaving a gap. It takes
@@ -62,8 +65,14 @@ pub fn holds_right_to_left(cells: &[Cell]) -> bool {
         matches!(
             class_of(cell.character),
             CharClass::Right | CharClass::Arabic | CharClass::ArabicDigit
-        )
+        ) || matches!(cell.character, '۰'..='۹')
     })
+}
+
+/// True when the cells hold a letter, of whatever script: a text that
+/// holds one takes its direction from its first.
+pub(crate) fn holds_a_letter(cells: &[Cell]) -> bool {
+    direction::direction_of_first_letter(cells).is_some()
 }
 
 /// How a character bears on the order of the text around it, for code
@@ -91,10 +100,20 @@ pub(crate) fn bearing(character: char) -> Bearing {
 }
 
 /// The Logical positions of a line's characters in the order they sit on
-/// screen from the left, by the same reordering rules Layout follows, for a
-/// line whose direction is `direction`.
+/// screen from the left, by the Unicode reordering rules alone, for a line
+/// whose direction is `direction`. This is the order a Target app that
+/// reorders Farsi itself draws: it knows nothing of the rules Layout adds.
 pub(crate) fn screen_order(characters: &[char], direction: Direction) -> Vec<usize> {
-    reorder::screen_order(&reorder::levels(characters, direction))
+    reorder::screen_order(&reorder::levels(characters, direction, &[]))
+}
+
+/// The stretches of a line that Layout's own rules keep in one piece, read
+/// left to right: numbers joined by a mark, and words with no Farsi in
+/// them. Each rule is in a file of its own.
+fn pieces_read_left_to_right(characters: &[char]) -> Vec<std::ops::Range<usize>> {
+    let mut pieces = numbers::joined_numbers(characters);
+    pieces.extend(words::whole_words(characters));
+    pieces
 }
 
 /// Lays out one line of a paragraph whose Paragraph direction is `direction`.
@@ -121,7 +140,11 @@ pub fn lay_out_line(logical: &[Cell], direction: Direction, width: usize) -> Lin
         .iter()
         .map(|unit| cells[unit.first].character)
         .collect();
-    let levels = reorder::levels(&characters, direction);
+    let levels = reorder::levels(
+        &characters,
+        direction,
+        &pieces_read_left_to_right(&characters),
+    );
     let order = reorder::screen_order(&levels);
 
     let mut screen = Vec::with_capacity(cells.len());

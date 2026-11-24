@@ -67,6 +67,7 @@ pub(crate) struct Paragraph {
 /// Turns the rows of one paragraph back into Logical order. `width` is the
 /// width of the area the app wrapped the paragraph in.
 pub(crate) fn paragraph(rows: &[DrawnRow], width: usize, start: Start) -> Paragraph {
+    let drawn = rows;
     let rows: Vec<Row> = rows.iter().map(|row| Row::read(row, width)).collect();
 
     let direction = match start {
@@ -79,12 +80,17 @@ pub(crate) fn paragraph(rows: &[DrawnRow], width: usize, start: Start) -> Paragr
         }
         // The app takes a row's direction from the row's first letter, so
         // the direction it drew the paragraph's first letters in is the
-        // Paragraph direction.
+        // Paragraph direction. The app draws a paragraph with no letter in
+        // it, such as a number that stands alone, as it was written, and
+        // Layout has a rule for which way such a paragraph runs.
         _ => rows
             .iter()
             .find(|row| row.holds_a_letter)
             .and_then(|row| row.drawn_direction(None))
-            .unwrap_or(Direction::LeftToRight),
+            .unwrap_or_else(|| {
+                let written: Vec<Cell> = drawn.iter().flat_map(|row| row.cells.clone()).collect();
+                layout::paragraph_direction(&written)
+            }),
     };
 
     let rows = rows
@@ -104,6 +110,33 @@ pub(crate) fn paragraph(rows: &[DrawnRow], width: usize, start: Start) -> Paragr
         })
         .collect();
     Paragraph { direction, rows }
+}
+
+/// Every Logical order one row may have been written in, each as the
+/// row's cells in that order: one for each direction the app can have
+/// drawn the row in, the likelier first. For whoever can tell the right
+/// one by something the row itself does not show, as the borders of a
+/// table do.
+pub(crate) fn readings(row: &DrawnRow) -> Vec<Vec<Cell>> {
+    let read = Row::read(row, row.cells.len());
+    let cells = |order: &Option<Vec<usize>>| -> Option<Vec<Cell>> {
+        let order = order.as_ref()?;
+        Some(
+            order
+                .iter()
+                .flat_map(|unit| read.units[*unit].clone())
+                .map(|cell| read.cells[cell].clone())
+                .collect(),
+        )
+    };
+    let (first, second) = match read.drawn_direction(None) {
+        Some(Direction::LeftToRight) => (&read.left_to_right, &read.right_to_left),
+        _ => (&read.right_to_left, &read.left_to_right),
+    };
+    [cells(first), cells(second)]
+        .into_iter()
+        .flatten()
+        .collect()
 }
 
 /// A drawn row with its readings.
@@ -316,7 +349,7 @@ fn reading(characters: &[char], drawn: Direction) -> Option<Vec<usize>> {
     // Failing that, the one whose brackets are least odd.
     let mut least_odd: Option<(usize, Vec<usize>)> = None;
     for told in &other_ways {
-        let levels = levels(&pieces, drawn, told);
+        let levels = levels(&pieces, characters, drawn, told);
         let order = logical_order(&levels);
         if !checks_out(characters, &order, drawn) {
             continue;
@@ -401,8 +434,15 @@ fn pieces(characters: &[char]) -> Vec<(Piece, usize)> {
 /// - A number that stands right after an English word, as in `Python 3`,
 ///   belongs to that word and reads left to right with it. Any other number
 ///   is a number in the Farsi text and counts with the right-to-left text.
+/// - But the number a size begins with is a number in the Farsi text: see
+///   `begins_a_size`.
 /// - A bracket takes its direction from its neighbours, like a space.
-fn sides(pieces: &[(Piece, usize)], drawn: Direction, told: &[(usize, Side)]) -> Vec<Side> {
+fn sides(
+    pieces: &[(Piece, usize)],
+    characters: &[char],
+    drawn: Direction,
+    told: &[(usize, Side)],
+) -> Vec<Side> {
     let edge = match drawn {
         Direction::LeftToRight => Side::Left,
         Direction::RightToLeft => Side::Right,
@@ -420,6 +460,11 @@ fn sides(pieces: &[(Piece, usize)], drawn: Direction, told: &[(usize, Side)]) ->
             Piece::Right => Side::Right,
             Piece::Gap => Side::Neutral,
             Piece::Bracket => told.unwrap_or(Side::Neutral),
+            Piece::Digits
+                if drawn == Direction::RightToLeft && begins_a_size(pieces, characters, at) =>
+            {
+                told.unwrap_or(Side::Right)
+            }
             Piece::Digits => told.unwrap_or(before),
         };
         if side != Side::Neutral {
@@ -430,13 +475,41 @@ fn sides(pieces: &[(Piece, usize)], drawn: Direction, told: &[(usize, Side)]) ->
     sides
 }
 
+/// The guess that keeps the numbers of a size in the order a person writes
+/// them. In a row drawn right to left the app draws «33 x 20» as `x 20 33`:
+/// the letter takes the number after it along, and the number before it is
+/// left behind, on the far side. It draws «x 20 33» the same way, and the
+/// screen does not say which was written. A lone `x` with two numbers after
+/// it is far more often a size than a word followed by two numbers, so the
+/// second of the two numbers is taken to be the one the size begins with.
+/// The same holds for the last number after a longer size, as in
+/// `x 32 x 3 128` for «128 x 32 x 3».
+///
+/// `at` is the place of a number among the pieces of the screen row.
+fn begins_a_size(pieces: &[(Piece, usize)], characters: &[char], at: usize) -> bool {
+    if at < 4 {
+        return false;
+    }
+    let start = |piece: usize| pieces[..piece].iter().map(|(_, len)| len).sum::<usize>();
+    let text = |piece: usize| &characters[start(piece)..start(piece) + pieces[piece].1];
+    let is_space = |piece: usize| text(piece).iter().all(|c| *c == ' ');
+    let is_times =
+        |piece: usize| pieces[piece].0 == Piece::Left && matches!(text(piece), ['x'] | ['X']);
+    is_space(at - 1) && pieces[at - 2].0 == Piece::Digits && is_space(at - 3) && is_times(at - 4)
+}
+
 /// How deep each character of a screen row sits in runs of text that
 /// alternate in direction, if the row was drawn with the direction `drawn`
 /// and its pieces are read as `told`. These are the levels of the Unicode
 /// reordering rules, worked out from the screen instead of from Logical
 /// order.
-fn levels(pieces: &[(Piece, usize)], drawn: Direction, told: &[(usize, Side)]) -> Vec<u8> {
-    let sides = sides(pieces, drawn, told);
+fn levels(
+    pieces: &[(Piece, usize)],
+    characters: &[char],
+    drawn: Direction,
+    told: &[(usize, Side)],
+) -> Vec<u8> {
+    let sides = sides(pieces, characters, drawn, told);
     // The level of the row itself, of text running against it, and the
     // side that text is on.
     let (base, against_level, against) = match drawn {

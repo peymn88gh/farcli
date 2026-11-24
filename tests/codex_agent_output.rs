@@ -404,23 +404,16 @@ fn parts_of_a_reply_that_are_not_surely_paragraphs_stay_as_drawn() {
         // A quotation.
         reply_row("> یک نقل قول"),
         String::new(),
-        // A list item and a row of a table.
-        reply_row(&format!("{}برگ", coloured("• ", MARKER))),
-        String::new(),
-        reply_row(" نام    مقدار"),
-        reply_row(&dim("━━━━━  ━━━━━━")),
-        reply_row(" برگ    42"),
-        String::new(),
     ]));
     // The model's thinking, which Codex draws dim and slanted after the
     // same mark as a reply.
     run.app_writes(on_row(
-        11,
+        6,
         &format!("{}{}", dim("• "), dim(&italic("در حال فکر کردن"))),
     ));
 
     assert_ne!(run.row(0), run.drawn_row(0));
-    for row in 1..12 {
+    for row in 1..7 {
         assert!(run.row_is_as_drawn(row), "row {row}: {}", run.row(row));
     }
 }

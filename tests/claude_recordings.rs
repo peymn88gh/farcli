@@ -1,8 +1,9 @@
 //! The recordings of real Claude Code replies in `tests/recordings`, played
-//! through the session: every Farsi paragraph of a reply, and every line of
-//! Farsi that stands on a row of its own, reads as Layout shows it from the
-//! text the model wrote, in both of Claude Code's display modes, and
-//! everything else on the screen stays as the app drew it, colours and all.
+//! through the session: every Farsi paragraph of a reply, every line of
+//! Farsi that stands on a row of its own, every list item and every row of
+//! a table reads as Layout shows it from the text the model wrote, in both
+//! of Claude Code's display modes, and everything else on the screen stays
+//! as the app drew it, colours and all.
 //!
 //! What the model wrote is in `NAME.reply.md` beside each reply recording.
 //! The recordings were made in a Terminal of 100 columns, where a reply's
@@ -15,7 +16,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::PathBuf;
 
-use claude_code::{as_drawn, direction_of, laid_out, wrapped};
+use claude_code::{as_drawn, cells, direction_of, from_the_right, laid_out, wrapped};
 use farcli::recording::{Event, Recording, Replay};
 use farcli::screen::{row_text, Cell, Color, Row};
 
@@ -50,7 +51,7 @@ fn is_farsi(character: char) -> bool {
     ('\u{600}'..='\u{6ff}').contains(&character)
 }
 
-/// What a row of a reply's prose belongs to.
+/// What a row of a reply belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Prose {
     /// A paragraph, which Claude Code may wrap onto several rows.
@@ -60,6 +61,10 @@ enum Prose {
     Line,
     /// A number standing alone before a part of the reply, such as «۳.».
     Label,
+    /// An item of a list.
+    ListItem,
+    /// A row of a table that holds text: its header, or one of its rows.
+    TableRow,
 }
 
 /// A row of a reply's prose.
@@ -105,6 +110,104 @@ fn prose_rows(name: &str) -> Vec<ProseRow> {
             }
         }
     }
+    rows
+}
+
+/// Every list item of the reply, top to bottom. The model wrote an item
+/// inside an item two columns in, which is where Claude Code draws it
+/// under a bullet. Claude Code keeps the marker at the left of its row and
+/// reorders only the text after it. No item of the recorded replies is
+/// long enough to wrap.
+fn list_rows(name: &str) -> Vec<ProseRow> {
+    let reply = fs::read_to_string(folder().join(format!("{name}.reply.md"))).unwrap();
+    let mut rows = Vec::new();
+    for line in reply.lines().map(str::trim_end) {
+        let text = line.trim_start();
+        let indent = &line[..line.len() - text.len()];
+        let Some((marker, text)) = text.split_once(' ') else {
+            continue;
+        };
+        let numbered = marker
+            .strip_suffix('.')
+            .is_some_and(|number| !number.is_empty() && number.chars().all(|c| c.is_ascii_digit()));
+        if marker != "-" && !numbered {
+            continue;
+        }
+        let written = format!("{indent}{marker} {text}");
+        rows.push(ProseRow {
+            drawn: format!("  {indent}{marker} {}", as_drawn(text)),
+            wanted: format!("  {}", laid_out(&written, direction_of(text), WIDTH)),
+            of: Prose::ListItem,
+        });
+    }
+    rows
+}
+
+/// A row of a table as the model wrote it and Claude Code spaced it: each
+/// cell as wide as the widest cell of its column and a column more on
+/// either side, the header's text in the middle of its cell and any other
+/// text one column in from the bar on its left.
+fn table_cells(name: &str) -> Vec<Vec<String>> {
+    let reply = fs::read_to_string(folder().join(format!("{name}.reply.md"))).unwrap();
+    let table: Vec<Vec<&str>> = reply
+        .lines()
+        .filter(|line| line.starts_with('|') && !line.starts_with("|---"))
+        .map(|line| {
+            let line = line.trim_end().trim_matches('|');
+            line.split('|').map(str::trim).collect()
+        })
+        .collect();
+    let columns = table.first().map_or(0, Vec::len);
+    let widths: Vec<usize> = (0..columns)
+        .map(|column| table.iter().map(|row| cells(row[column])).max().unwrap() + 2)
+        .collect();
+    table
+        .iter()
+        .enumerate()
+        .map(|(at, row)| {
+            row.iter()
+                .zip(&widths)
+                .map(|(text, width)| {
+                    let room = width - cells(text);
+                    let before = if at == 0 { room / 2 } else { 1 };
+                    format!("{}{text}{}", " ".repeat(before), " ".repeat(room - before))
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Every row of the reply's table that holds text. Claude Code reorders
+/// such a row as one piece of text, bars and all. It should read with each
+/// cell laid out by itself between the same bars, in the order the model
+/// wrote the cells.
+fn table_rows(name: &str) -> Vec<ProseRow> {
+    table_cells(name)
+        .iter()
+        .map(|row| {
+            let wanted: Vec<String> = row
+                .iter()
+                .map(|cell| {
+                    let width = cells(cell);
+                    let shown = laid_out(cell, direction_of(cell), width);
+                    format!("{shown:<width$}")
+                })
+                .collect();
+            ProseRow {
+                drawn: format!("  {}", as_drawn(&format!("│{}│", row.join("│")))),
+                wanted: format!("  │{}│", wanted.join("│")),
+                of: Prose::TableRow,
+            }
+        })
+        .collect()
+}
+
+/// Every row of the reply that farcli lays out: its prose, its list items
+/// and the rows of its table.
+fn rows_laid_out(name: &str) -> Vec<ProseRow> {
+    let mut rows = prose_rows(name);
+    rows.extend(list_rows(name));
+    rows.extend(table_rows(name));
     rows
 }
 
@@ -156,12 +259,12 @@ fn styles(row: &[Cell]) -> Vec<String> {
     styles
 }
 
-/// Checks every moment of a recording: each row of the reply's prose reads
-/// as wanted and keeps the styles its characters had, and every other row
-/// is exactly as drawn, in every cell. Returns how often each prose row was
-/// seen.
+/// Checks every moment of a recording: each row of the reply's prose, of
+/// its lists and of its table reads as wanted and keeps the styles its
+/// characters had, and every other row is exactly as drawn, in every cell.
+/// Returns how often each of those rows was seen.
 fn check_recording(name: &str) -> Vec<usize> {
-    let prose = prose_rows(name);
+    let prose = rows_laid_out(name);
     let wanted: HashMap<&str, usize> = prose
         .iter()
         .enumerate()
@@ -211,15 +314,18 @@ fn the_rows_worked_out_from_what_the_model_wrote_are_the_rows_claude_code_drew()
     //
     // The classic reply: two paragraphs of two rows, four labels and a poem
     // of three lines. The fullscreen reply: the same without the labels.
-    // The earlier reply drawn again: two paragraphs of two rows.
+    // The earlier reply drawn again: two paragraphs of two rows. Each
+    // reply also has seven list items and a table of a header and three
+    // rows.
     for (name, rows) in [(CLASSIC, 11), (FULLSCREEN, 7), (DRAWN_AGAIN, 4)] {
         let ever_drawn: BTreeSet<String> = rows_drawn_and_shown(name)
             .into_iter()
             .map(|(drawn, _)| drawn)
             .collect();
-        let prose = prose_rows(name);
-        assert_eq!(prose.len(), rows, "{name}");
-        for row in prose {
+        assert_eq!(prose_rows(name).len(), rows, "{name}");
+        assert_eq!(list_rows(name).len(), 7, "{name}");
+        assert_eq!(table_rows(name).len(), 4, "{name}");
+        for row in rows_laid_out(name) {
             assert!(ever_drawn.contains(&row.drawn), "{name}: {}", row.drawn);
         }
     }
@@ -275,17 +381,16 @@ fn a_wrapped_row_that_begins_with_an_english_word_keeps_its_paragraphs_direction
 }
 
 #[test]
-fn of_the_forty_two_rows_of_farsi_in_the_two_replies_fourteen_read_as_the_model_wrote_them() {
-    // What farcli corrects so far and what it leaves. The paragraphs of a
-    // reply, and lines of Farsi separated by single line breaks, are laid
-    // out from the text the model wrote. List items and table rows wait for
-    // their own ticket: they are shown as Claude Code drew them, reordered
-    // by the app and unjoined. So is code, for good.
+fn of_the_forty_two_rows_of_farsi_in_the_two_replies_forty_read_as_the_model_wrote_them() {
+    // What farcli corrects and what it leaves. The paragraphs of a reply,
+    // lines of Farsi separated by single line breaks, numbers that stand
+    // alone as labels, list items and the rows of a table are laid out
+    // from the text the model wrote. Code is shown as Claude Code drew it,
+    // reordered by the app and unjoined, for good.
     let mut as_the_model_wrote = 0;
     let mut as_the_app_drew = 0;
-    let mut the_same_either_way = 0;
     for (name, labels) in [(CLASSIC, 4), (FULLSCREEN, 0)] {
-        let prose = prose_rows(name);
+        let laid_out = rows_laid_out(name);
         let mut rows: HashMap<&str, BTreeSet<String>> = HashMap::new();
         for (drawn, shown) in rows_drawn_and_shown(name) {
             if !drawn.contains(is_farsi) {
@@ -298,30 +403,23 @@ fn of_the_forty_two_rows_of_farsi_in_the_two_replies_fourteen_read_as_the_model_
                 assert_eq!(shown, drawn, "{name}");
                 continue;
             }
-            let text = drawn.trim_start();
-            let what = if let Some(row) = prose.iter().find(|row| row.drawn == drawn) {
+            let what = if let Some(row) = laid_out.iter().find(|row| row.drawn == drawn) {
                 assert_eq!(shown, row.wanted, "{name}");
+                assert_ne!(shown, drawn, "{name}");
                 match row.of {
                     Prose::Paragraph => "paragraph rows",
                     Prose::Line => "lines of the poem",
                     Prose::Label => "labels",
+                    Prose::ListItem => "list items",
+                    Prose::TableRow => "table rows",
                 }
-            } else {
-                let what = if ["- ", "1. ", "2. "]
-                    .iter()
-                    .any(|mark| text.starts_with(mark))
-                {
-                    "list items"
-                } else if text.starts_with('│') {
-                    "table rows"
-                } else if text.ends_with(" #") {
-                    "comments in code"
-                } else {
-                    // The message sent, in the Input box and above the reply.
-                    continue;
-                };
+            } else if drawn.trim_start().ends_with(" #") {
                 assert_eq!(shown, drawn, "{name}");
-                what
+                "comments in code"
+            } else {
+                // The message sent, in the Input box and above the reply.
+                assert_eq!(shown, drawn, "{name}");
+                continue;
             };
             rows.entry(what).or_default().insert(drawn);
         }
@@ -329,22 +427,68 @@ fn of_the_forty_two_rows_of_farsi_in_the_two_replies_fourteen_read_as_the_model_
         // Two paragraphs of two rows and a poem of three lines.
         assert_eq!(count("paragraph rows"), 4, "{name}");
         assert_eq!(count("lines of the poem"), 3, "{name}");
-        // A number alone on its row holds no letter: Layout leaves it
-        // where Claude Code drew it.
+        // A number alone on its row, written in Farsi digits.
         assert_eq!(count("labels"), labels, "{name}");
         // A list of five items and one of two, a table of a header and
         // three rows, and the Farsi comment that starts the code block.
         assert_eq!(count("list items"), 7, "{name}");
         assert_eq!(count("table rows"), 4, "{name}");
         assert_eq!(count("comments in code"), 1, "{name}");
-        as_the_model_wrote += count("paragraph rows") + count("lines of the poem");
-        as_the_app_drew += count("list items") + count("table rows") + count("comments in code");
-        the_same_either_way += count("labels");
+        as_the_model_wrote += count("paragraph rows")
+            + count("lines of the poem")
+            + count("labels")
+            + count("list items")
+            + count("table rows");
+        as_the_app_drew += count("comments in code");
     }
+    assert_eq!((as_the_model_wrote, as_the_app_drew), (40, 2));
+}
+
+#[test]
+fn the_lists_and_the_table_of_the_classic_reply_spelled_out() {
+    // The rows above are checked against what Layout makes of the model's
+    // text. Here some of them are written out by hand, each as Claude Code
+    // drew it and as it should be shown.
+    let shown = |drawn: &str| row_text(&row_drawn_as(CLASSIC, drawn).1);
+    let from_right_edge = |on_screen: String| format!("{on_screen:>100}").trim_end().to_string();
+
+    // «- مورد دوم», the item inside it «- زیرمورد الف», and «1. قدم اول»:
+    // the marker on the right, the inner item two columns in from there.
     assert_eq!(
-        (as_the_model_wrote, as_the_app_drew, the_same_either_way),
-        (14, 24, 4)
+        shown("  - مود دروم"),
+        from_right_edge(format!("{} -", from_the_right("ﻣﻮﺭﺩ ﺩﻭﻡ")))
     );
+    assert_eq!(
+        shown("    - فلا درومریز"),
+        from_right_edge(format!("{} -  ", from_the_right("ﺯﯾﺮﻣﻮﺭﺩ ﺍﻟﻒ")))
+    );
+    assert_eq!(
+        shown("  1. لوا مدق"),
+        from_right_edge(format!("{} .1", from_the_right("ﻗﺪﻡ ﺍﻭﻝ")))
+    );
+
+    // «| لوگو | تصویر اصلی سایت | 33 x 20 |»: Claude Code drew the size
+    // first and turned round, `x 20 33`. It is shown last, as the model
+    // wrote it, and each bar is under its joint of the border above.
+    let border = "  ├───────┼─────────────────┼─────────┤";
+    let row = shown("  │ x 20 33 │ تیاس یلصا ریوصت │  وگول │");
+    assert_eq!(
+        row,
+        format!(
+            "  │  {} │ {} │ 33 x 20 │",
+            from_the_right("ﻟﻮﮔﻮ"),
+            from_the_right("ﺗﺼﻮﯾﺮ ﺍﺻﻠﯽ ﺳﺎﯾﺖ")
+        )
+    );
+    assert_eq!(shown(border), border);
+    let places = |row: &str, marks: &[char]| -> Vec<usize> {
+        let marks = |c: &char| marks.contains(c);
+        (0..row.chars().count())
+            .filter(|at| row.chars().nth(*at).as_ref().is_some_and(marks))
+            .collect()
+    };
+    assert_eq!(places(&row, &['│']), places(border, &['├', '┼', '┤']));
+    assert_eq!(places(&row, &['│']), [2, 10, 28, 38]);
 }
 
 /// The rows of a recording, as drawn and as shown, whose text as drawn is

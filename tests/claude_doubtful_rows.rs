@@ -15,7 +15,7 @@ mod claude_code;
 use claude_code::{
     as_drawn, at_right_edge, from_the_right, laid_out, reply, reply_of, wrapped, Run,
 };
-use farcli::layout::Direction::{LeftToRight, RightToLeft};
+use farcli::layout::Direction::RightToLeft;
 
 /// The rows of a reply with one paragraph, as shown in a Terminal `cols`
 /// wide, without the two columns before the reply's text.
@@ -170,10 +170,10 @@ fn a_number_right_after_an_english_word_is_read_with_that_word() {
 }
 
 #[test]
-fn a_row_drawn_right_to_left_reads_the_same_whichever_way_its_numbers_are_read() {
+fn a_lone_x_with_two_numbers_after_it_is_read_as_a_size() {
     // «33 x 20», «x 20 33» and «33 20 x» are all drawn `x 20 33` in a row
-    // that runs right to left. In a Farsi paragraph the doubt does not
-    // show: Layout puts all three in the same places too.
+    // that runs right to left. farcli takes the reading a person would
+    // write, the size, and shows its numbers in the order of that reading.
     let readings = [
         "اندازه 33 x 20 است",
         "اندازه x 20 33 است",
@@ -181,38 +181,121 @@ fn a_row_drawn_right_to_left_reads_the_same_whichever_way_its_numbers_are_read()
     ];
     for reading in readings {
         assert_eq!(as_drawn(reading), "تسا x 20 33 هزادنا");
-        assert_eq!(
-            laid_out(reading, RightToLeft, 38),
-            laid_out(readings[0], RightToLeft, 38)
-        );
     }
 
     let shown = shown(readings[0], 40);
 
-    assert_eq!(shown[0], laid_out(readings[0], RightToLeft, 38));
+    let on_screen = [
+        from_the_right("ﺍﺳﺖ").as_str(),
+        " 33 x 20 ",
+        from_the_right("ﺍﻧﺪﺍﺯﻩ").as_str(),
+    ]
+    .concat();
+    assert_eq!(shown[0], at_right_edge(38, &on_screen));
+    // Had the model written the letter first and both numbers after it,
+    // this would be the wrong reading.
+    assert_ne!(shown[0], laid_out(readings[1], RightToLeft, 38));
 }
 
 #[test]
-fn in_an_english_paragraph_a_farsi_row_with_numbers_beside_an_english_word_may_be_read_wrongly() {
+fn a_size_of_three_numbers_and_a_size_in_brackets_are_read_as_sizes() {
+    for (written, size) in [
+        ("اندازه 128 x 32 x 3 است", " 128 x 32 x 3 "),
+        ("اندازه (33 x 20) است", " (33 x 20) "),
+        ("اندازه 33 X 20 است", " 33 X 20 "),
+    ] {
+        let shown = shown(written, 40);
+
+        let on_screen = [
+            from_the_right("ﺍﺳﺖ").as_str(),
+            size,
+            from_the_right("ﺍﻧﺪﺍﺯﻩ").as_str(),
+        ]
+        .concat();
+        assert_eq!(shown[0], at_right_edge(38, &on_screen), "{written}");
+    }
+}
+
+#[test]
+fn a_size_written_with_a_multiplication_sign_or_a_date_leaves_no_doubt() {
+    // Claude Code draws these with their numbers in the opposite order,
+    // and only one text gives that picture.
+    for (written, drawn, piece) in [
+        ("اندازه 33 × 20 است", "تسا 20 × 33 هزادنا", " 33 × 20 "),
+        (
+            "تاریخ 2026-11-23 است",
+            "تسا 23-11-2026 خیرات",
+            " 2026-11-23 ",
+        ),
+    ] {
+        assert_eq!(as_drawn(written), drawn);
+
+        let shown = shown(written, 40);
+
+        let first_word = match written.starts_with("اندازه") {
+            true => "ﺍﻧﺪﺍﺯﻩ",
+            false => "ﺗﺎﺭﯾﺦ",
+        };
+        let on_screen = [
+            from_the_right("ﺍﺳﺖ").as_str(),
+            piece,
+            from_the_right(first_word).as_str(),
+        ]
+        .concat();
+        assert_eq!(shown[0], at_right_edge(38, &on_screen), "{written}");
+    }
+}
+
+#[test]
+fn a_size_in_a_farsi_row_of_an_english_paragraph_is_read_as_a_size_too() {
     // The paragraph begins in English, so it runs left to right, and its
     // second row begins in Farsi, so Claude Code drew that row right to
-    // left. Here the reading of `x 20 33` does show. farcli reads both
-    // numbers with the English word before them, which is right for
-    // «Python 3» and wrong for this row: the model wrote «33 x 20».
+    // left.
     let first = "The picture is small: ";
     let written = "اندازه 33 x 20 است";
-    let read_as = "اندازه x 20 33 است";
-    assert_eq!(as_drawn(written), as_drawn(read_as));
+    assert_eq!(as_drawn(written), "تسا x 20 33 هزادنا");
     let mut run = Run::start(26, 6);
 
     run.app_writes(reply(&[&[first, written]]));
 
-    assert_eq!(
-        run.row(1),
-        format!("  {}", laid_out(read_as, LeftToRight, 24))
-    );
-    assert_ne!(
-        run.row(1),
-        format!("  {}", laid_out(written, LeftToRight, 24))
-    );
+    // Laid out left to right like its paragraph, each stretch of Farsi
+    // reading from the right in its place.
+    let on_screen = [
+        from_the_right("ﺍﻧﺪﺍﺯﻩ").as_str(),
+        " 33 x 20 ",
+        from_the_right("ﺍﺳﺖ").as_str(),
+    ]
+    .concat();
+    assert_eq!(run.row(1), format!("  {on_screen}"));
+}
+
+#[test]
+fn a_path_and_a_dotted_name_inside_a_farsi_row_are_shown_in_one_piece() {
+    // Claude Code draws the marks a path begins with at its other end.
+    // Only one text gives that picture, so nothing is guessed here: the
+    // row is turned back, and Layout keeps the path whole.
+    for (written, drawn, name) in [
+        (
+            "فایل ./src/main.rs را ببین",
+            "نیبب ار src/main.rs/. لیاف",
+            " ./src/main.rs ",
+        ),
+        (
+            "فایل .gitignore را ببین",
+            "نیبب ار gitignore. لیاف",
+            " .gitignore ",
+        ),
+    ] {
+        assert_eq!(as_drawn(written), drawn);
+
+        let shown = shown(written, 40);
+
+        let on_screen = [
+            from_the_right("ﺭﺍ ﺑﺒﯿﻦ").as_str(),
+            name,
+            from_the_right("ﻓﺎﯾﻞ").as_str(),
+        ]
+        .concat();
+        assert_eq!(shown[0], at_right_edge(38, &on_screen), "{written}");
+    }
 }
