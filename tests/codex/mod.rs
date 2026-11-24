@@ -74,10 +74,10 @@ pub fn at_right_edge(cols: usize, text: &str) -> String {
     format!("{text:>cols$}")
 }
 
-/// The bytes Codex writes to draw `text` on the row `row`, counted from 0,
-/// from the first column, and to empty the rest of the row.
+/// The bytes Codex writes to empty the row `row`, counted from 0, and draw
+/// `text` on it from the first column.
 pub fn on_row(row: usize, text: &str) -> String {
-    format!("\x1b[{};1H\x1b[0m{text}\x1b[0m\x1b[K", row + 1)
+    format!("\x1b[{};1H\x1b[0m\x1b[2K{text}\x1b[0m", row + 1)
 }
 
 /// The first row of a reply: the reply mark, dim, and the text after it.
@@ -90,17 +90,28 @@ pub fn reply_row(text: &str) -> String {
     format!("  {text}")
 }
 
-/// A row of the message the user sent, or of the Input box, on the
-/// background Codex gives it: `mark` in the first column and the text from
-/// the third, the background filling the row.
-pub fn on_background(mark: &str, text: &str, background: (u8, u8, u8)) -> String {
+/// A row on a background that fills it, as Codex draws the message the
+/// user sent and the Input box.
+fn on_background(text: &str, background: (u8, u8, u8)) -> String {
     let (red, green, blue) = background;
-    format!("\x1b[48;2;{red};{green};{blue}m{mark} {text}\x1b[K")
+    format!("\x1b[48;2;{red};{green};{blue}m{text}\x1b[K")
 }
 
-/// The background of a message the user sent, and of the Input box.
-pub const SENT: (u8, u8, u8) = (50, 50, 50);
-pub const INPUT_BOX: (u8, u8, u8) = (41, 41, 41);
+/// The first row of the message the user sent: the prompt mark, bold and
+/// dim, and the text from the third column.
+pub fn sent_start(text: &str) -> String {
+    on_background(&format!("\x1b[1;2m› \x1b[22m{text}"), (50, 50, 50))
+}
+
+/// Any other row of the message the user sent.
+pub fn sent_row(text: &str) -> String {
+    on_background(&format!("  {text}"), (50, 50, 50))
+}
+
+/// The row of the Input box that holds its mark, bold, and its text.
+pub fn input_box(text: &str) -> String {
+    on_background(&format!("\x1b[1m›\x1b[22m {text}"), (41, 41, 41))
+}
 
 /// The bytes Codex writes for a whole screen: every row from the top, and
 /// the rows left over emptied.
@@ -112,6 +123,38 @@ pub fn screen(rows: &[String]) -> String {
     bytes.push_str(&format!("\x1b[{};1H\x1b[0m\x1b[J", rows.len() + 1));
     bytes.push_str("\x1b[?2026l");
     bytes
+}
+
+/// Text in one of the colours Codex's theme gives the words of a code
+/// block, a list marker or a heading.
+pub fn coloured(text: &str, colour: (u8, u8, u8)) -> String {
+    let (red, green, blue) = colour;
+    format!("\x1b[38;2;{red};{green};{blue}m{text}\x1b[39m")
+}
+
+pub fn bold(text: &str) -> String {
+    format!("\x1b[1m{text}\x1b[22m")
+}
+
+pub fn dim(text: &str) -> String {
+    format!("\x1b[2m{text}\x1b[22m")
+}
+
+pub fn italic(text: &str) -> String {
+    format!("\x1b[3m{text}\x1b[23m")
+}
+
+/// Colours of the theme Codex chose in the recorded sessions.
+pub const COMMENT: (u8, u8, u8) = (147, 153, 178);
+pub const WORD: (u8, u8, u8) = (205, 214, 244);
+pub const STRING: (u8, u8, u8) = (166, 227, 161);
+pub const MARKER: (u8, u8, u8) = (148, 226, 213);
+pub const HEADING: (u8, u8, u8) = (249, 226, 175);
+
+/// The row under the Input box that names the model, which Codex draws in
+/// colour. A session that shows it is one whose colours are switched on.
+pub fn status_row() -> String {
+    format!("  {}", coloured("GPT low", (246, 226, 183)))
 }
 
 fn takes_no_cell(character: char) -> bool {

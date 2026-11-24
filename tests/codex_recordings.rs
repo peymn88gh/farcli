@@ -12,13 +12,13 @@
 
 mod codex;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::PathBuf;
 
 use codex::{direction_of, laid_out, wrapped};
 use farcli::recording::{Event, Recording, Replay};
-use farcli::screen::{row_text, Cell, Row};
+use farcli::screen::{row_text, Cell, Color, Row};
 
 /// Codex's default display, which draws on the alternate screen.
 const DEFAULT: &str = "codex-reply";
@@ -306,4 +306,228 @@ fn in_the_inline_display_every_paragraph_of_the_reply_reads_as_the_model_wrote_i
     // The reply's first rows scroll off the top, and are found by
     // scrolling back.
     assert!(times_seen.iter().all(|times| *times >= 1), "{times_seen:?}");
+}
+
+#[test]
+fn the_reply_reads_correctly_in_every_frame_while_it_arrives() {
+    // Codex shows a reply as the model writes it, a few words a frame.
+    // Counted here: the frames in which a row of the reply's prose was on
+    // screen unfinished, and read as the start of what the model wrote.
+    for name in [DEFAULT, INLINE] {
+        let prose = prose_rows(name);
+        let mut unfinished = BTreeSet::new();
+        for moment in moments(name) {
+            for (shown, drawn) in moment.shown.iter().zip(&moment.drawn) {
+                let drawn = row_text(drawn);
+                let Some((at, wanted)) = wanted(&prose, &drawn) else {
+                    continue;
+                };
+                // A number alone, such as «۳», reads the same either way.
+                let holds_a_farsi_letter = drawn.chars().any(|c| is_farsi(c) && c.is_alphabetic());
+                if drawn != prose[at].drawn && holds_a_farsi_letter {
+                    assert_eq!(row_text(shown), wanted, "{name}, {}", moment.when);
+                    assert_ne!(row_text(shown), drawn, "{name}, {}", moment.when);
+                    unfinished.insert(drawn);
+                }
+            }
+        }
+        // Two paragraphs and three lines of a poem, each seen at several
+        // lengths on its way.
+        assert!(unfinished.len() >= 15, "{name}: {}", unfinished.len());
+    }
+}
+
+#[test]
+fn a_wrapped_row_that_begins_with_an_english_word_keeps_its_paragraphs_direction() {
+    // The model wrote «... سپس دستور git status را اجرا کنید ...» and Codex
+    // wrapped it between `git` and `status`. The second row begins with an
+    // English word and still reads from the right edge: `status` first, at
+    // the right, and the full stop last, at the left.
+    let prose = prose_rows(DEFAULT);
+    let row = prose
+        .iter()
+        .find(|row| row.drawn.starts_with("  status "))
+        .expect("the row that begins with `status`");
+    let (_, shown) = row_drawn_as(DEFAULT, &row.drawn);
+
+    let shown = row_text(&shown);
+    assert_eq!(shown.chars().count(), 100, "{shown}");
+    assert!(shown.ends_with(" status"), "{shown}");
+    assert!(shown.trim_start().starts_with('.'), "{shown}");
+}
+
+#[test]
+fn of_the_forty_six_rows_of_farsi_in_the_two_replies_twelve_read_as_the_model_wrote_them() {
+    // What farcli corrects so far and what it leaves. The paragraphs of a
+    // reply, and lines of Farsi separated by single line breaks, are laid
+    // out from the text the model wrote. List items and table rows wait for
+    // their own ticket: they are shown as Codex drew them, in Logical order
+    // and unjoined. So is code, for good.
+    let mut as_the_model_wrote = 0;
+    let mut as_the_app_drew = 0;
+    let mut the_same_either_way = 0;
+    for name in [DEFAULT, INLINE] {
+        let prose = prose_rows(name);
+        let mut rows: HashMap<&str, BTreeSet<String>> = HashMap::new();
+        for (drawn, shown) in rows_drawn_and_shown(name) {
+            if !drawn.contains(is_farsi) {
+                continue;
+            }
+            let text = drawn.trim_start();
+            let margin = drawn.len() - text.len();
+            let what = if let Some(row) = prose.iter().find(|row| row.drawn == drawn) {
+                assert_eq!(shown, row.wanted, "{name}");
+                match row.of {
+                    Prose::Paragraph => "paragraph rows",
+                    Prose::Line => "lines of the poem",
+                    Prose::Label => "labels",
+                }
+            } else {
+                // Everything else is as drawn: also the message sent, the
+                // Input box and the row under it that names the session.
+                assert_eq!(shown, drawn, "{name}");
+                if margin >= 2 && ["• ", "1. ", "2. "].iter().any(|m| text.starts_with(m)) {
+                    "list items"
+                } else if margin == 3 && text.contains("    ") {
+                    "table rows"
+                } else if text.starts_with("# ") || text.starts_with("message = ") {
+                    "rows of code"
+                } else {
+                    continue;
+                }
+            };
+            rows.entry(what).or_default().insert(drawn);
+        }
+        let count = |what: &str| rows.get(what).map_or(0, BTreeSet::len);
+        // A paragraph of one row, one of two rows, and a poem of three
+        // lines.
+        assert_eq!(count("paragraph rows"), 3, "{name}");
+        assert_eq!(count("lines of the poem"), 3, "{name}");
+        // A number alone on its row, such as «۳.», holds no letter:
+        // Layout leaves it where Codex drew it.
+        assert_eq!(count("labels"), 4, "{name}");
+        // A list of five items and one of two, a table of a header and
+        // three rows, and the comment and the string in the code block.
+        assert_eq!(count("list items"), 7, "{name}");
+        assert_eq!(count("table rows"), 4, "{name}");
+        assert_eq!(count("rows of code"), 2, "{name}");
+        as_the_model_wrote += count("paragraph rows") + count("lines of the poem");
+        as_the_app_drew += count("list items") + count("table rows") + count("rows of code");
+        the_same_either_way += count("labels");
+    }
+    assert_eq!(
+        (as_the_model_wrote, as_the_app_drew, the_same_either_way),
+        (12, 26, 8)
+    );
+}
+
+/// The rows of a recording, as drawn and as shown, whose text as drawn is
+/// `text`, from the last settled moment that holds one.
+fn row_drawn_as(name: &str, text: &str) -> (Row, Row) {
+    moments(name)
+        .into_iter()
+        .rev()
+        .filter(|moment| moment.settled)
+        .find_map(|moment| {
+            let at = moment.drawn.iter().position(|row| row_text(row) == text)?;
+            Some((moment.drawn[at].clone(), moment.shown[at].clone()))
+        })
+        .unwrap_or_else(|| panic!("{name}: no row drawn as {text:?}"))
+}
+
+#[test]
+fn the_code_block_of_a_reply_stays_as_codex_drew_it_colours_and_all() {
+    // Codex colours every word of the block, and draws the Farsi of the
+    // comment and of the string in Logical order like everything else.
+    for name in [DEFAULT, INLINE] {
+        for line in [
+            "  # پیام پاییزی",
+            "  message = \"سلام پاییز\"",
+            "  print(message)",
+        ] {
+            let (drawn, shown) = row_drawn_as(name, line);
+            let characters: Vec<&Cell> = drawn.iter().filter(|c| c.character != ' ').collect();
+            assert!(characters.len() >= 11, "{name}: {line}");
+            assert!(
+                characters
+                    .iter()
+                    .all(|cell| matches!(cell.style.foreground, Color::Rgb(..))),
+                "{name}: {line}"
+            );
+            assert!(shown == drawn, "{name}: {line}");
+        }
+    }
+}
+
+#[test]
+fn the_message_sent_stays_as_drawn_on_its_background_in_both_displays() {
+    let on_a_background = |row: &[Cell]| {
+        let background = row[0].style.background;
+        background != Color::Default && row.iter().all(|cell| cell.style.background == background)
+    };
+    // The last row of the message, which carries no mark: «... خط و بدون
+    // خط خالی بین مصرع‌ها.»
+    let last_row = "  خط و بدون خط خالی بین مصرع\u{200c}ها.";
+    for name in [DEFAULT, INLINE] {
+        let (drawn, shown) = row_drawn_as(name, last_row);
+        assert!(on_a_background(&drawn), "{name}");
+        assert!(shown == drawn, "{name}");
+    }
+
+    // The default display, once the message has scrolled out of sight:
+    // its start stays on the top row, cut short, and the reply's rows
+    // under it are corrected.
+    let prose = prose_rows(DEFAULT);
+    let under_the_start: Vec<Moment> = moments(DEFAULT)
+        .into_iter()
+        .filter(|moment| {
+            let top = row_text(&moment.drawn[0]);
+            moment.settled && top.starts_with("› ") && top.ends_with('…')
+        })
+        .collect();
+    assert!(under_the_start.len() >= 4);
+    for moment in under_the_start {
+        assert!(on_a_background(&moment.drawn[0]), "{}", moment.when);
+        assert!(moment.shown[0] == moment.drawn[0], "{}", moment.when);
+        let corrected = moment
+            .drawn
+            .iter()
+            .zip(&moment.shown)
+            .any(|(drawn, shown)| {
+                let drawn = row_text(drawn);
+                let row = prose.iter().find(|row| row.drawn == drawn);
+                row.is_some_and(|row| row.of != Prose::Label && row_text(shown) == row.wanted)
+            });
+        assert!(corrected, "{}", moment.when);
+    }
+}
+
+#[test]
+fn while_farsi_is_typed_into_the_input_box_the_whole_screen_stays_as_codex_drew_it() {
+    // The Input box is the app's own until the ticket that makes typing in
+    // it right. Nothing in this session is Agent output, so farcli has
+    // nothing to change: every cell and the cursor are as the app left
+    // them, each time the user is about to press a key.
+    let recording = load(TYPING);
+    let mut through_farcli = Replay::start(&recording, recording.profile());
+    let mut alone = Replay::without_farcli(&recording);
+    let mut keys = 0;
+    for (index, (_, event)) in recording.events.iter().enumerate() {
+        if matches!(event, Event::UserTyped(_)) && !through_farcli.holding_frame() {
+            keys += 1;
+            assert_eq!(
+                through_farcli.terminal.screen(),
+                alone.terminal.screen(),
+                "before event {index}"
+            );
+            assert_eq!(
+                through_farcli.terminal.cursor(),
+                alone.terminal.cursor(),
+                "before event {index}"
+            );
+        }
+        through_farcli.step();
+        alone.step();
+    }
+    assert!(keys > 50);
 }
