@@ -463,3 +463,90 @@ fn a_key_that_deletes_to_the_end_of_the_line_leaves_the_rest_in_order() {
     assert_eq!(app.shown(), right_to_left(&["سلام world".to_string()], 40));
     assert_eq!(app.cursor(), at(0, left_of(10, 40)));
 }
+
+#[test]
+fn any_message_the_user_did_not_type_is_shown_as_it_was_written_or_as_the_app_drew_it() {
+    // Messages of English and Farsi words, numbers, punctuation and words
+    // in brackets, in any order, each put into the box by the app itself.
+    // With no key to go by, farcli may lay a message out only when the
+    // screen leaves one order for it. It must never show another order
+    // than the one the message was written in.
+    const WORDS: &[&str] = &[
+        "abc",
+        "to",
+        "config.json",
+        "سلام",
+        "می\u{200c}شود",
+        "پیام",
+        "و",
+        "-",
+        "12",
+        "2.5",
+        "۳۴",
+        "10%",
+        "۱۰٪",
+        "$5",
+        "12-34",
+        "5/6",
+        "2026-11-23",
+        "+2",
+        "#1",
+        "A1",
+        "x",
+        "(2.5%)",
+        "(abc)",
+        "(پیام)",
+        "(12)",
+        "(abc پیام)",
+        "(سلام to)",
+        "[پیام]",
+        "«سلام»",
+        "\"abc\"",
+    ];
+    // What may follow a word, with no space between.
+    const MARKS: &[&str] = &["", "", "", "", ".", "،", ":", "!", "%"];
+    let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
+    let mut pick = |from: usize| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state % from as u64) as usize
+    };
+
+    let mut app = ClaudeCode::start(40, 10);
+    let (mut laid_out_from_the_right, mut as_drawn_with_farsi) = (0, 0);
+    let mut wrong: Vec<String> = Vec::new();
+    for _ in 0..2500 {
+        let words: Vec<String> = (0..1 + pick(6))
+            .map(|_| format!("{}{}", WORDS[pick(WORDS.len())], MARKS[pick(MARKS.len())]))
+            .collect();
+        let message = words.join(" ");
+        if cells(&message) > 34 {
+            continue;
+        }
+
+        app.press(Key::Up);
+        app.holds(&message);
+
+        let direction = claude_code::direction_of(&message);
+        let as_written = format!("{MARK}{}", laid_out(&message, direction, 38));
+        let shown = &app.shown()[0];
+        if app.is_shown_as_drawn() {
+            as_drawn_with_farsi += usize::from(*shown != as_written);
+        } else if *shown == as_written {
+            laid_out_from_the_right += usize::from(direction == RightToLeft);
+        } else {
+            wrong.push(format!("{message:?} is shown as {shown:?}"));
+        }
+    }
+
+    assert!(
+        wrong.is_empty(),
+        "{} wrong:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+    // Both happen often: many messages have one order only, and many do not.
+    assert!(laid_out_from_the_right > 300, "{laid_out_from_the_right}");
+    assert!(as_drawn_with_farsi > 300, "{as_drawn_with_farsi}");
+}
