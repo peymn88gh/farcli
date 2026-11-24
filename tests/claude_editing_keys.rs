@@ -1075,3 +1075,55 @@ fn a_key_that_deletes_a_space_nobody_can_see_does_not_lose_the_message_later() {
 
     assert_eq!(app.shown(), right_to_left(&["سلام worl"], 40));
 }
+
+#[test]
+fn while_the_correction_is_switched_off_every_arrow_reaches_the_app_as_pressed() {
+    let mut app = ClaudeCode::start(40, 10);
+    app.types("سلام world");
+    let end = left_of(10, 40);
+    // Onto the `r`.
+    pressing(&mut app, Key::Right, 3);
+    assert_eq!(app.character_under_the_cursor(), 'r');
+
+    // F12 switches the correction off. The Terminal shows the box as the
+    // app drew it, with the cursor where the app has it: the user now sees
+    // a cursor that moves in Logical order.
+    let f12 = "\x1b[123;88;0;1;0;1_\x1b[123;88;0;0;0;1_";
+    assert_eq!(app.press_as(f12), "");
+    app.handles(1);
+    assert!(app.is_shown_as_drawn());
+
+    for key in [
+        Key::Left,
+        Key::Left,
+        Key::Right,
+        Key::CtrlLeft,
+        Key::ShiftRight,
+        Key::Left,
+    ] {
+        let forwarded = app.presses(key.clone());
+
+        assert_eq!(forwarded, as_pressed(key));
+        assert!(app.is_shown_as_drawn());
+    }
+    // The keys of a Terminal that sends no Windows keys, too.
+    for sent in ["\x1b[C", "\x1b[D", "\x1b[1;5C", "\x1b[1;5D"] {
+        let forwarded = app.press_as(sent);
+        app.handles(1);
+
+        assert_eq!(forwarded, sent);
+    }
+
+    // On again: the text field, with the cursor where those keys left it,
+    // which is before the `w`. The arrows mean sides of the screen again:
+    // left of the `w` is the end of the message, five characters on.
+    assert_eq!(app.press_as(f12), "");
+    app.handles(1);
+    assert_eq!(app.shown(), right_to_left(&["سلام world"], 40));
+    assert_eq!(app.cursor(), at(0, end + 1));
+
+    let forwarded = app.presses(Key::Left);
+
+    assert_eq!(forwarded, as_pressed(Key::Right).repeat(5));
+    assert_eq!(app.cursor(), at(0, end));
+}

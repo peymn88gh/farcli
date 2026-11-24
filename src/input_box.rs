@@ -229,8 +229,10 @@ impl InputBox {
     ///
     /// Only the Left and Right arrow keys are ever replaced, and only while
     /// the box is shown as a text field: the user means a side of the
-    /// screen, and the app moves its cursor in Logical order.
-    pub fn user_typed(&mut self, input: &Input) -> Option<Vec<Input>> {
+    /// screen, and the app moves its cursor in Logical order. With
+    /// `shown_as_drawn`, the user is looking at the app's own screen
+    /// whatever farcli makes of it, and every key is forwarded as it came.
+    pub fn user_typed(&mut self, input: &Input, shown_as_drawn: bool) -> Option<Vec<Input>> {
         let Some(arrow) = Arrow::read(input) else {
             self.follow(input);
             return None;
@@ -249,7 +251,10 @@ impl InputBox {
         match arrow.reach {
             Reach::Character => {
                 for _ in 0..arrow.repeats {
-                    let (side, times) = self.keys_towards(arrow.side);
+                    let (side, times) = match shown_as_drawn {
+                        true => (arrow.side, 1),
+                        false => self.keys_towards(arrow.side),
+                    };
                     presses.extend(std::iter::repeat_n(side, times));
                     let edit = match side {
                         Side::Left => Edit::Back,
@@ -263,18 +268,20 @@ impl InputBox {
             // left, what comes after is on the left.
             Reach::Word => {
                 let side = match self.direction_at_the_cursor() {
-                    Some(Direction::RightToLeft) => arrow.side.other(),
+                    Some(Direction::RightToLeft) if !shown_as_drawn => arrow.side.other(),
                     _ => arrow.side,
                 };
                 presses.extend(std::iter::repeat_n(side, arrow.repeats));
                 self.wait_for(Edit::Other, 1);
             }
         }
+        // Only a key in the Windows form comes up again.
+        let comes_up = matches!(input, Input::Key(_));
         if presses.len() == arrow.repeats && presses.iter().all(|side| *side == arrow.side) {
-            self.arrows_down[key].forwarded = true;
+            self.arrows_down[key].forwarded |= comes_up;
             return None;
         }
-        self.arrows_down[key].replaced = true;
+        self.arrows_down[key].replaced |= comes_up;
         Some(
             presses
                 .into_iter()

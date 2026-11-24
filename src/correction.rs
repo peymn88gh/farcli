@@ -87,10 +87,11 @@ impl Correction {
     /// witnesses of what the Input box holds. Returns what the Target app
     /// is to be sent in its place, or `None` when it is to be sent `input`
     /// as it came: in an Input box shown as a text field, the arrow keys
-    /// mean a side of the screen.
-    pub fn user_typed(&mut self, input: &Input) -> Option<Vec<Input>> {
+    /// mean a side of the screen. With `shown_as_drawn`, the Terminal
+    /// shows the frames as the app drew them and no key is ever changed.
+    pub fn user_typed(&mut self, input: &Input, shown_as_drawn: bool) -> Option<Vec<Input>> {
         match self.profile.screen() {
-            Screen::ClaudeCode => self.input_box.user_typed(input),
+            Screen::ClaudeCode => self.input_box.user_typed(input, shown_as_drawn),
             _ => None,
         }
     }

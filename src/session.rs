@@ -160,7 +160,9 @@ impl Session {
                 Pressed::Still => continue,
                 Pressed::No => {}
             }
-            let in_its_place = self.correction.user_typed(input);
+            // With the correction switched off the user sees the app's own
+            // cursor, which moves in Logical order: no key is changed.
+            let in_its_place = self.correction.user_typed(input, !self.correcting);
             for input in in_its_place
                 .as_deref()
                 .unwrap_or(std::slice::from_ref(input))
