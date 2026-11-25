@@ -4,9 +4,15 @@ Read and type Farsi in Claude Code CLI and Codex CLI on Windows. farcli runs the
 
 ## Install
 
-1. Install Rust (https://rustup.rs).
-2. `cargo build --release`
-3. Put `target\release\farcli.exe` somewhere on your PATH.
+With Rust installed (https://rustup.rs), run in PowerShell:
+
+```
+cargo install --locked --git https://github.com/peymn88gh/farcli
+```
+
+This puts `farcli.exe` in `%USERPROFILE%\.cargo\bin`, which Rust's installer already added to your PATH. Open a new terminal and run `farcli --version`. Run the same command again to update; `cargo uninstall farcli` removes it.
+
+Keep `--locked`: it builds with the exact library versions in `Cargo.lock`, which this project needs.
 
 ## Use
 
